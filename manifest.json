@@ -1,0 +1,18 @@
+[
+    {
+        "name": "Private Session",
+        "description": "Always start Spotify with Private Session active",
+        "main": "private-session/dist/private-session.js",
+        "preview": "private-session/icon.png",
+        "readme": "private-session/README.md",
+        "authors": [
+            {
+                "name": "Bojan Raic",
+                "url": "https://github.com/BojanRaic"
+            }
+        ],
+        "tags": [
+            "privacy"
+        ]
+    }
+]

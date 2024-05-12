@@ -1,0 +1,46 @@
+name: Issue Report
+description: Report an issue
+labels: [issue]
+body:
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: "OS of the system issue is observed on"
+      placeholder: "Example: macOS Sonoma"
+    validations:
+      required: true
+
+  - type: input
+    id: spotify-version
+    attributes:
+      label: Spotify Version
+      description: "Affected Spotify application version"
+      placeholder: "Example: 1.21.2.123-3a22721f"
+    validations:
+      required: true
+
+  - type: input
+    id: spicetify-version
+    attributes:
+      label: Spicetify Version
+      description: "Affected Spicetify CLI version"
+      placeholder: "Example: 1.24.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: spicetify-extensions
+    attributes:
+      label: Other Spicetify Extensions Installed
+      description: Please list other installed/enabled Spicetify extensions; type None if you're only using Private Session 
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue-description
+    attributes:
+      label: Description
+      description: Please explain the observed behavior and why it's an issue
+    validations:
+      required: true

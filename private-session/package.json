@@ -1,0 +1,14 @@
+{
+  "devDependencies": {
+    "terser-webpack-plugin": "^5.3.10",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
+  }, 
+  "scripts": {
+    "build": "webpack --mode=production", 
+    "clean": "rm -rf ./dist",
+    "deploy-local": "cp src/private-session.js `spicetify path userdata`/Extensions && spicetify config extensions private-session.js && spicetify apply && spicetify enable-devtools",
+    "local":"npm run clean && npm run build && npm run deploy-local", 
+    "undeploy-local": "rm -rf `spicetify path userdata`/Extensions/private-session.js && spicetify config extensions private-session.js- && spicetify apply"
+  }
+}
