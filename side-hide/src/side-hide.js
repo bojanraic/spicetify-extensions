@@ -1,26 +1,33 @@
-const CSS_SELECTORS = {
-  FRIENDS_ACTIVITY_BUTTON: "button.main-topBar-buddyFeed[aria-label='Friend Activity']",
-  NOW_PLAYING_BUTTON: "button.main-genericButton-button[aria-label='Now playing view']",
-  SIDEBAR_DIV: ".Root__right-sidebar",
-  SIDEBAR_RESIZE_BAR: ".Root__right-sidebar .LayoutResizer__resize-bar"
+const SH_NOW_PLAYING_TEXT = "Now playing view";
+const SH_NOW_PLAYING_CLOSE_ID = "PanelHeader_CloseButton";
+const SH_FRIEND_ACTIVITY_FEED_TEXT = "Friend Activity";
+
+const SH_SIDEBAR_CSS_SELECTORS = {
+  FRIENDS_ACTIVITY_BUTTON: `button.main-topBar-buddyFeed[aria-label='${SH_FRIEND_ACTIVITY_FEED_TEXT}']`,
+  NOW_PLAYING_BUTTON: `button.main-genericButton-button[aria-label='${SH_NOW_PLAYING_TEXT}']`,
 };
 
-const RETRY_LIMIT = 5;
-const DELAY_MS = 100;
+const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
 
-async function getElement(selector) {
-  for (let retryCount = 0; retryCount < RETRY_LIMIT; retryCount++) {
-    const element = document.querySelector(selector);
+const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] button` 
+
+const SH_RETRY_LIMIT = 20;
+const SH_DELAY_MS = 350;
+
+async function getElement(selector, parent = null) {
+  for (let retryCount = 0; retryCount < SH_RETRY_LIMIT; retryCount++) {
+    console.log(`Side-Hide: In getElement for ${selector}: retry: ${retryCount + 1}`);
+    const element = parent != null ? parent.querySelector(selector) : document.querySelector(selector);
     if (element) {
       return element;
     }
     else {
-      await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+      await new Promise(resolve => setTimeout(resolve, SH_DELAY_MS));
     }
   }
 }
 
-async function hideElement(selector) {
+async function hideElementBySelector(selector) {
   const element = await getElement(selector);
   element.style.setProperty('width', '0', 'important');
   element.style.setProperty('display', 'none', 'important');
@@ -28,16 +35,21 @@ async function hideElement(selector) {
 
 
 async function hideSide() {
-  for (const key in CSS_SELECTORS) {
-    hideElement(CSS_SELECTORS[key]);
+  const nowPlayingAside = await getElement(SH_NOW_PLAYING_ASIDE);
+  const closeBtns = await getElement(SH_NOW_PLAYING_ASIDE_CLOSE_BTN, nowPlayingAside);
+  if (closeBtns[0] != null) {
+    closeBtns[0].click();
+  }
+  for (const key in SH_SIDEBAR_CSS_SELECTORS) {
+    await hideElementBySelector(SH_SIDEBAR_CSS_SELECTORS[key]);
   }
 }
 
-const main = async (condition, callback) => {
+const sh_main = async (condition, callback) => {
   while (!condition()) {
-    await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+    await new Promise(resolve => setTimeout(resolve, SH_DELAY_MS));
   }
   await callback();
 };
 
-main(() => Spicetify.Platform, hideSide);
+sh_main(() => Spicetify.Platform, hideSide);
