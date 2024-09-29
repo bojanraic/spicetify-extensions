@@ -6,8 +6,8 @@ const PS_CSS_SELECTORS = {
   MENU_ITEM_CHECKED: "svg"
 };
 const PS_PRIVATE_SESSION_LABEL_TEXT = "Private session";
-const PS_RETRY_LIMIT = 5;
-const PS_DELAY_MS = 100;
+const PS_RETRY_LIMIT = 10;
+const PS_DELAY_MS = 150;
 
 async function getElement(selector, multiple) {
   for (let retryCount = 0; retryCount < PS_RETRY_LIMIT; retryCount++) {
