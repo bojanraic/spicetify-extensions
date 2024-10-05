@@ -1,5 +1,5 @@
 const PS_PRIVATE_SESSION_LABEL_TEXT = "Private session";
-const PS_RETRY_LIMIT = 10;
+const PS_RETRY_LIMIT = 20;
 const PS_DELAY_MS = 150;
 
 const PS_CSS_SELECTORS = {
@@ -35,6 +35,10 @@ async function clickElementBySelector(selector) {
   return element;
 }
 
+async function isMenuItemSelected(button) {
+  return !!button.querySelector(PS_CSS_SELECTORS.MENU_ITEM_CHECKED);
+}
+
 async function findMenuItemButton(labelText) {
   const menuItems = await getElement(PS_CSS_SELECTORS.MENU_ITEM_BUTTON, true);
   for (const button of menuItems) {
@@ -44,10 +48,6 @@ async function findMenuItemButton(labelText) {
     }
   }
   return null;
-}
-
-async function isMenuItemSelected(button) {
-  return !!button.querySelector(PS_CSS_SELECTORS.MENU_ITEM_CHECKED);
 }
 
 async function startPrivateSession() {

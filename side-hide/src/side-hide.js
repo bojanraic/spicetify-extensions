@@ -1,4 +1,4 @@
-const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;  
+const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
 const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] > button`
 const SH_NOW_PLAYING_TEXT = "Now playing view";
 const SH_NOW_PLAYING_CLOSE_ID = "PanelHeader_CloseButton";
@@ -29,6 +29,7 @@ async function hideElementBySelector(selector) {
   const element = await getElement(selector);
   console.log(`Side-Hide: Hiding element with selector: '${selector}'`);
   element.style.setProperty('width', '0', 'important');
+  element.style.setProperty('height', '0', 'important');
   element.style.setProperty('display', 'none', 'important');
 }
 
