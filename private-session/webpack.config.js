@@ -7,6 +7,14 @@ module.exports = {
     path: __dirname + '/dist',
   },
   optimization: {
-    minimizer: [new TerserPlugin()],
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            drop_console: true,
+          },
+        },
+      })
+    ],
   },
 };

@@ -7,8 +7,9 @@
   "scripts": {
     "build": "webpack --mode=production", 
     "clean": "rm -rf ./dist",
-    "deploy-local": "cp src/private-session.js `spicetify path userdata`/Extensions && spicetify config extensions private-session.js && spicetify apply && spicetify enable-devtools",
-    "local":"npm run clean && npm run build && npm run deploy-local", 
+    "copy": "cp src/private-session.js `spicetify path userdata`/Extensions",
+    "deploy": "npm run copy && spicetify config extensions private-session.js && spicetify apply && spicetify enable-devtools",
+    "local":"npm run clean && npm run build && npm run deploy", 
     "undeploy-local": "rm -rf `spicetify path userdata`/Extensions/private-session.js && spicetify config extensions private-session.js- && spicetify apply"
   }
 }

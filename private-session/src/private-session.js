@@ -11,6 +11,7 @@ const PS_DELAY_MS = 150;
 
 async function getElement(selector, multiple) {
   for (let retryCount = 0; retryCount < PS_RETRY_LIMIT; retryCount++) {
+    console.log(`Private-Session: In getElement for "${selector}" - retry: ${retryCount + 1}`);
     if (multiple) {
       const elements = document.querySelectorAll(selector);
       if (elements.length > 0) {
