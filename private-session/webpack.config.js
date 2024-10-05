@@ -1,10 +1,15 @@
 const TerserPlugin = require('terser-webpack-plugin');
+const { WebpackManifestPlugin } = require('webpack-manifest-plugin');
+const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
   entry: './src/private-session.js',
   output: {
-    filename: 'private-session.js',
-    path: __dirname + '/dist',
+    filename: 'private-session.[contenthash].js',
+    path: path.resolve(__dirname, 'dist'),
+    publicPath: 'private-session/'
   },
   optimization: {
     minimizer: [
@@ -17,4 +22,21 @@ module.exports = {
       })
     ],
   },
+  plugins: [
+    new CleanWebpackPlugin(),
+    new WebpackManifestPlugin({
+      fileName: path.resolve(__dirname, '../manifest.json'),
+      generate: (_, files) => {
+        const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../manifest.json'), 'utf8'));
+        files.forEach(({ _, path }) => {
+          const extension = manifest.find(item => item.name === 'Private Session');
+          if (extension) {
+            extension.main = path;
+          }
+        });
+        fs.writeFileSync(path.resolve(__dirname, '../manifest.json'), JSON.stringify(manifest, null, 2));
+        return manifest;
+      },
+    }),
+  ],
 };

@@ -1,15 +1,17 @@
 {
   "devDependencies": {
+    "clean-webpack-plugin": "^4.0.0",
     "terser-webpack-plugin": "^5.3.10",
     "webpack": "^5.91.0",
-    "webpack-cli": "^5.1.4"
-  }, 
+    "webpack-cli": "^5.1.4",
+    "webpack-manifest-plugin": "^5.0.0"
+  },
   "scripts": {
-    "build": "webpack --mode=production", 
+    "build": "webpack --mode=production",
     "clean": "rm -rf ./dist",
     "copy": "cp src/private-session.js `spicetify path userdata`/Extensions",
     "deploy": "npm run copy && spicetify config extensions private-session.js && spicetify apply && spicetify enable-devtools",
-    "local":"npm run clean && npm run build && npm run deploy", 
+    "local": "npm run clean && npm run build && npm run deploy",
     "undeploy-local": "rm -rf `spicetify path userdata`/Extensions/private-session.js && spicetify config extensions private-session.js- && spicetify apply"
   }
 }

@@ -1,35 +1,35 @@
 [
-    {
-        "name": "Private Session",
-        "description": "Always start Spotify with Private Session active",
-        "main": "private-session/dist/private-session.js",
-        "preview": "private-session/icon.png",
-        "readme": "private-session/README.md",
-        "authors": [
-            {
-                "name": "Bojan Raic",
-                "url": "https://github.com/BojanRaic"
-            }
-        ],
-        "tags": [
-            "privacy"
-        ]
-    },
-    {
-        "name": "Side Hide",
-        "description": "Hides the sidebar (Friends Activity and Now Playing) and associated action buttons",
-        "main": "side-hide/dist/side-hide.js",
-        "preview": "side-hide/icon.png",
-        "readme": "side-hide/README.md",
-        "authors": [
-            {
-                "name": "Bojan Raic",
-                "url": "https://github.com/BojanRaic"
-            }
-        ],
-        "tags": [
-            "sidebar", 
-            "annoyances"
-        ]
-    }
+  {
+    "name": "Private Session",
+    "description": "Always start Spotify with Private Session active",
+    "main": "private-session/private-session.2120e18834124e613f9c.js",
+    "preview": "private-session/icon.png",
+    "readme": "private-session/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "privacy"
+    ]
+  },
+  {
+    "name": "Side Hide",
+    "description": "Hides the sidebar (Friends Activity & Now Playing) and associated action buttons",
+    "main": "side-hide/side-hide.7796db347fa166a78800.js",
+    "preview": "side-hide/icon.png",
+    "readme": "side-hide/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "sidebar",
+      "annoyances"
+    ]
+  }
 ]

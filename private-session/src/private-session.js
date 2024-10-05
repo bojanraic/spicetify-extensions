@@ -1,3 +1,7 @@
+const PS_PRIVATE_SESSION_LABEL_TEXT = "Private session";
+const PS_RETRY_LIMIT = 10;
+const PS_DELAY_MS = 150;
+
 const PS_CSS_SELECTORS = {
   PRIVATE_SESSION_INDICATOR: "button.main-noConnection-button",
   MAIN_MENU: "div.main-topBar-topbarContentRight > button.main-userWidget-box",
@@ -5,9 +9,6 @@ const PS_CSS_SELECTORS = {
   MENU_ITEM_BUTTON: "div.main-userWidget-dropDownMenu > ul > li > button.main-contextMenu-menuItemButton",
   MENU_ITEM_CHECKED: "svg"
 };
-const PS_PRIVATE_SESSION_LABEL_TEXT = "Private session";
-const PS_RETRY_LIMIT = 10;
-const PS_DELAY_MS = 150;
 
 async function getElement(selector, multiple) {
   for (let retryCount = 0; retryCount < PS_RETRY_LIMIT; retryCount++) {
@@ -50,17 +51,13 @@ async function isMenuItemSelected(button) {
 }
 
 async function startPrivateSession() {
-  // Check for private session indicator
   if (!(await getElement(PS_CSS_SELECTORS.PRIVATE_SESSION_INDICATOR, false))) {
-    // Open main menu
     const menu = await clickElementBySelector(PS_CSS_SELECTORS.MAIN_MENU);
     const privateSessionMenuItem = await findMenuItemButton(PS_PRIVATE_SESSION_LABEL_TEXT);
     if (privateSessionMenuItem) {
       if (await isMenuItemSelected(privateSessionMenuItem)) {
-        // Already selected, close menu
         await menu.click();
       } else {
-        // Click to select private session
         await privateSessionMenuItem.click();
       }
     } else {
