@@ -1,7 +1,7 @@
-const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
-const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] > button`
 const SH_NOW_PLAYING_TEXT = "Now playing view";
 const SH_NOW_PLAYING_CLOSE_ID = "PanelHeader_CloseButton";
+const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
+const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] > button`
 
 const SH_FRIEND_ACTIVITY_FEED_TEXT = "Friend Activity";
 const SH_SIDEBAR_CSS_SELECTORS = {
@@ -37,12 +37,14 @@ async function hideElementBySelector(selector) {
 async function hideSide() {
   const nowPlayingAside = await getElement(SH_NOW_PLAYING_ASIDE);
   if (nowPlayingAside != null) {
+    console.log(`Side-Hide: Now Playing aside element visible.`);
     const closeBtn = await getElement(SH_NOW_PLAYING_ASIDE_CLOSE_BTN, nowPlayingAside);
     if (closeBtn != null) {
+      console.log(`Side-Hide: Now Playing close button found.`);
       closeBtn.click();
     }
     else {
-      console.error(`Side-Hide: did not find a button with selector: '${SH_NOW_PLAYING_ASIDE_CLOSE_BTN}'`);
+      console.error(`Side-Hide: did not find Now Playing close button with selector: '${SH_NOW_PLAYING_ASIDE_CLOSE_BTN}'`);
     }
   }
   else {
