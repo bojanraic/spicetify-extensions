@@ -3,7 +3,7 @@ const PS_RETRY_LIMIT = 20;
 const PS_DELAY_MS = 150;
 
 const PS_CSS_SELECTORS = {
-  PRIVATE_SESSION_INDICATOR: "button.main-noConnection-button",
+  PRIVATE_SESSION_INDICATOR: "button.main-noConnection-isNotice",
   MAIN_MENU: "div.main-topBar-topbarContentRight > button.main-userWidget-box",
   MENU_ITEM_LABEL: "span",
   MENU_ITEM_BUTTON: "div.main-userWidget-dropDownMenu > ul > li > button.main-contextMenu-menuItemButton",
