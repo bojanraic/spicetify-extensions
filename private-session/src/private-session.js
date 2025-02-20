@@ -73,4 +73,11 @@ const privateSessionMain = async (condition, callback) => {
   await callback();
 };
 
+// Add focus event listener to trigger private session on window focus
+window.addEventListener('focus', () => {
+  console.log('Private-Session: Window focused - checking private session state');
+  startPrivateSession();
+});
+
+
 privateSessionMain(() => Spicetify.Platform, startPrivateSession);
