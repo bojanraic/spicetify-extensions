@@ -10,7 +10,9 @@
     "build": "webpack --mode=production",
     "clean": "rm -rf ./dist",
     "copy": "cp src/side-hide.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/side-hide.*.js `spicetify path userdata`/Extensions/side-hide.js",
     "deploy": "npm run copy && spicetify config extensions side-hide.js && spicetify apply && spicetify enable-devtools",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions side-hide.js && spicetify apply",
     "local": "npm run clean && npm run build && npm run deploy",
     "undeploy": "rm -rf `spicetify path userdata`/Extensions/side-hide.js && spicetify config extensions side-hide.js- && spicetify apply"
   }

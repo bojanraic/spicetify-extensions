@@ -2,7 +2,7 @@
   {
     "name": "Private Session",
     "description": "Always start Spotify with Private Session active",
-    "main": "private-session/dist/private-session.3bfd7bfa9ac294b959ea.js",
+    "main": "private-session/dist/private-session.fbcd71e1d82bfb484370.js",
     "preview": "private-session/icon.png",
     "readme": "private-session/README.md",
     "authors": [
@@ -18,7 +18,7 @@
   {
     "name": "Side Hide",
     "description": "Hides the sidebar (Friends Activity & Now Playing) and associated action buttons",
-    "main": "side-hide/dist/side-hide.5bcf4c22e2a52a54d90f.js",
+    "main": "side-hide/dist/side-hide.a2216d106380521e5c7f.js",
     "preview": "side-hide/icon.png",
     "readme": "side-hide/README.md",
     "authors": [

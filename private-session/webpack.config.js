@@ -6,6 +6,7 @@ const path = require('path');
 const extensionName = 'Private Session'
 
 module.exports = {
+  mode: 'production',
   entry: './src/private-session.js',
   output: {
     filename: 'private-session.[contenthash].js',
@@ -13,15 +14,38 @@ module.exports = {
     publicPath: 'private-session/dist/'
   },
   optimization: {
+    minimize: true,
     minimizer: [
       new TerserPlugin({
         terserOptions: {
           compress: {
             drop_console: true,
+            drop_debugger: true,
+            pure_funcs: ['console.debug', 'console.log', 'console.info'],
+            passes: 2,
+            unsafe: true,
+            unsafe_math: true,
+            unsafe_methods: true,
+            reduce_vars: true,
+            reduce_funcs: true,
           },
+          mangle: {
+            properties: {
+              regex: /^_/,
+            },
+          },
+          format: {
+            comments: false,
+          },
+          ecma: 2020,
+          module: true,
         },
-      })
+        extractComments: false,
+      }),
     ],
+    usedExports: true,
+    sideEffects: false,
+    concatenateModules: true,
   },
   plugins: [
     new CleanWebpackPlugin(),
@@ -41,4 +65,7 @@ module.exports = {
       },
     }),
   ],
+  performance: {
+    hints: false,
+  },
 };
