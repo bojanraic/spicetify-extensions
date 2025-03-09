@@ -4,8 +4,10 @@ const SH_FRIEND_ACTIVITY_FEED_TEXT = "Friend Activity";
 
 // CSS/DOM constants
 const SH_RIGHT_SIDEBAR_CLASS = "Root__right-sidebar";
+const SH_MAIN_VIEW_CLASS = "Root__main-view";
 const SH_SIDEBAR_CSS_SELECTORS = {
   RIGHT_SIDEBAR: `div.${SH_RIGHT_SIDEBAR_CLASS}`,
+  MAIN_VIEW: `div.${SH_MAIN_VIEW_CLASS}`,
   FRIENDS_ACTIVITY_BUTTON: `button.main-topBar-buddyFeed[aria-label='${SH_FRIEND_ACTIVITY_FEED_TEXT}']`,
   NOW_PLAYING_BUTTON: `button.main-genericButton-button[aria-label='${SH_NOW_PLAYING_TEXT}']`,
 };
@@ -56,9 +58,38 @@ async function removeElementBySelector(selector) {
  * Removes all sidebar elements
  */
 async function hideSide() {
-  for (const [_, selector] of Object.entries(SH_SIDEBAR_CSS_SELECTORS)) {
-    await removeElementBySelector(selector);
+  // Find and remove the right sidebar container
+  const rightSidebar = await getElement(SH_SIDEBAR_CSS_SELECTORS.RIGHT_SIDEBAR);
+  if (rightSidebar) {
+    console.debug(`Side-Hide: Found right sidebar, removing it from DOM`);
+    
+    // Find the parent container that holds both main content and sidebar
+    const rootContainer = rightSidebar.parentElement;
+    if (rootContainer) {
+      // Remove the sidebar from the DOM completely
+      rootContainer.removeChild(rightSidebar);
+      
+      // Find the main content area and adjust its width
+      const mainContent = await getElement(SH_SIDEBAR_CSS_SELECTORS.MAIN_VIEW);
+      if (mainContent) {
+        mainContent.style.width = '100%';
+        mainContent.style.maxWidth = '100%';
+        mainContent.style.gridColumn = '1 / -1'; // Span all grid columns if using grid
+      }
+    } else {
+      console.warn(`Side-Hide: Could not find parent container of right sidebar`);
+      // Fallback to just hiding it if we can't remove it properly
+      rightSidebar.style.display = 'none';
+    }
+  } else {
+    console.warn(`Side-Hide: Could not find right sidebar to remove`);
   }
+  
+  // Hide the Friend Activity button in the top bar
+  await removeElementBySelector(SH_SIDEBAR_CSS_SELECTORS.FRIENDS_ACTIVITY_BUTTON);
+  
+  // Hide the Now Playing button in the bottom bar
+  await removeElementBySelector(SH_SIDEBAR_CSS_SELECTORS.NOW_PLAYING_BUTTON);
 }
 
 /**
