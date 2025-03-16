@@ -31,5 +31,23 @@
       "sidebar",
       "annoyances"
     ]
+  },
+  {
+    "name": "YT Video",
+    "description": "Search and watch YouTube videos for Spotify songs without ads, cookies, or tracking",
+    "main": "yt-video/dist/yt-video.26162f8d29995f247589.js",
+    "preview": "yt-video/icon.png",
+    "readme": "yt-video/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "youtube",
+      "privacy",
+      "video"
+    ]
   }
 ]
