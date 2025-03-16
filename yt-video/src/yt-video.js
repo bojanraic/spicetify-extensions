@@ -68,7 +68,7 @@ function saveSettings() {
  */
 function showSettings() {
   // Create a simple modal for settings
-  const popup = Spicetify.PopupModal.display({
+  Spicetify.PopupModal.display({
     title: "YT Video Settings",
     content: `
       <div style="display: flex; flex-direction: column; gap: 20px; padding: 24px; max-width: 600px; margin: 0 auto;">
@@ -109,7 +109,7 @@ function showSettings() {
 
     if (cancelButton) {
       cancelButton.addEventListener("click", () => {
-        popup.hide();
+        Spicetify.PopupModal.hide();
       });
     }
 
@@ -121,7 +121,7 @@ function showSettings() {
         ytvSettings.autoplay = autoplayCheckbox?.checked || false;
         
         saveSettings();
-        popup.hide();
+        Spicetify.PopupModal.hide();
         
         Spicetify.showNotification("Settings saved");
       });
@@ -373,7 +373,7 @@ function openYouTubeVideoForTrack(trackInfo) {
   Spicetify.showNotification(`Searching for "${searchQuery}" on YouTube...`);
   
   // Create a simple modal with just the search bar and results
-  const popup = Spicetify.PopupModal.display({
+  Spicetify.PopupModal.display({
     title: headerTitle,
     content: `
       <div id="ytv-container" style="width: 100%; height: 80vh;">
@@ -393,8 +393,6 @@ function openYouTubeVideoForTrack(trackInfo) {
     isLarge: true,
   });
   
-  // Store the current popup reference
-  window.ytvCurrentPopup = popup;
   
   // Apply custom styling to make the modal larger
   setTimeout(() => {
@@ -490,6 +488,12 @@ function openYouTubeVideoForTrack(trackInfo) {
     const showVideoPlayer = (videoId, videoIndex = 0, videoList = []) => {
       console.debug("YT-Video: Showing video player for ID:", videoId);
       
+      // Pause Spotify playback when loading a video
+      if (Spicetify.Player && Spicetify.Player.isPlaying()) {
+        console.debug("YT-Video: Pausing Spotify playback before loading video");
+        Spicetify.Player.pause();
+      }
+      
       // Store current video state
       window.ytvCurrentState = {
         videoId,
@@ -563,7 +567,7 @@ function openYouTubeVideoForTrack(trackInfo) {
       playerContainer.style.margin = "0";
       playerContainer.style.backgroundColor = "#000";
       
-      // Create the iframe
+      // Create the iframe with proper attributes
       const iframe = document.createElement('iframe');
       iframe.id = 'ytv-player-iframe';
       iframe.style.width = '100%';
@@ -577,9 +581,19 @@ function openYouTubeVideoForTrack(trackInfo) {
       iframe.style.left = "0";
       iframe.style.right = "0";
       iframe.style.bottom = "0";
-      iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/${videoId}?autoplay=1&rel=0&controls=1&showinfo=1`;
+      
+      // Add loading attribute to improve performance
+      iframe.loading = "lazy";
+      
+      // Set src with parameters to avoid preloading issues
+      iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/${videoId}?autoplay=${ytvSettings.autoplay ? '1' : '0'}&rel=0&controls=1&showinfo=1&enablejsapi=1`;
+      
+      // Set permissions
       iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
       iframe.allowFullscreen = true;
+      
+      // YouTube embeds need to run without sandbox restrictions to function properly
+      // We're using youtube-nocookie.com which is already a privacy-enhanced version
       
       // Create back button
       const backButton = document.createElement('button');
@@ -1082,33 +1096,42 @@ function openYouTubeVideoForTrack(trackInfo) {
       
       const encodedQuery = encodeURIComponent(query);
       
-      // Create iframe for embed search
-      contentContainer.innerHTML = `
-        <iframe 
-          style="width: 100%; height: 100%; border: none;" 
-          src="https://${YTV_NOCOOKIE_DOMAIN}/embed/videoseries?autoplay=0&rel=0&iv_load_policy=3&fs=1&color=red&hl=en&list=search&playlist=${encodedQuery}"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen>
-        </iframe>
-      `;
+      // Create a container for the iframe
+      const iframeContainer = document.createElement('div');
+      iframeContainer.style.width = '100%';
+      iframeContainer.style.height = '100%';
+      iframeContainer.style.position = 'relative';
+      
+      // Create iframe for embed search with proper attributes
+      const iframe = document.createElement('iframe');
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.border = 'none';
+      
+      // Add loading attribute to improve performance
+      iframe.loading = "lazy";
+      
+      // Set src with parameters to avoid preloading issues
+      iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/videoseries?autoplay=0&rel=0&iv_load_policy=3&fs=1&color=red&hl=en&list=search&playlist=${encodedQuery}&enablejsapi=1`;
+      
+      // Set permissions
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+      iframe.allowFullscreen = true;
+      
+      // YouTube embeds need to run without sandbox restrictions to function properly
+      // We're using youtube-nocookie.com which is already a privacy-enhanced version
+      
+      // Add the iframe to the container
+      iframeContainer.appendChild(iframe);
+      
+      // Clear content and add the iframe container
+      contentContainer.innerHTML = '';
+      contentContainer.appendChild(iframeContainer);
       
       // Add click handler to prevent modal from closing
-      setTimeout(() => {
-        const iframe = contentContainer.querySelector('iframe');
-        if (iframe) {
-          iframe.addEventListener('load', () => {
-            // Try to add event listeners to iframe content
-            try {
-              iframe.contentDocument.addEventListener('click', (e) => {
-                e.stopPropagation();
-              });
-            } catch (e) {
-              // Cross-origin restrictions may prevent this
-              console.debug("YT-Video: Could not add event listeners to iframe content due to cross-origin restrictions");
-            }
-          });
-        }
-      }, 100);
+      iframeContainer.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
     };
     
     // Function to perform search
@@ -1163,10 +1186,6 @@ function openYouTubeVideoForTrack(trackInfo) {
       settingsButton.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (window.ytvCurrentPopup) {
-          window.ytvCurrentPopup.hide();
-          window.ytvCurrentPopup = null;
-        }
         setTimeout(() => {
           showSettings();
         }, 100);
