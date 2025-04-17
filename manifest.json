@@ -35,7 +35,7 @@
   {
     "name": "YT Video",
     "description": "Search and watch YouTube videos for Spotify songs without ads, cookies, or tracking",
-    "main": "yt-video/dist/yt-video.681a6b91e93d76ed708e.js",
+    "main": "yt-video/dist/yt-video.e4314fca1abeffbf25aa.js",
     "preview": "yt-video/icon.png",
     "readme": "yt-video/README.md",
     "authors": [
@@ -48,6 +48,24 @@
       "youtube",
       "privacy",
       "video"
+    ]
+  },
+  {
+    "name": "Session Stats",
+    "description": "Track listening statistics for your current Spotify session",
+    "main": "sesh-stats/dist/sesh-stats.fce49aadca95082bcf9b.js",
+    "preview": "sesh-stats/icon.png",
+    "readme": "sesh-stats/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "statistics",
+      "listening",
+      "counters"
     ]
   }
 ]

@@ -22,6 +22,11 @@ const YTV_BUTTON_COLOR = "#FF0000"; // YouTube red color
 const YTV_SETTINGS_KEY = "yt-video:settings";
 const YTV_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Spicetify loads
 
+// Cache constants
+const YTV_CACHE_KEY_PREFIX = "yt-video:cache:";
+const YTV_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+const YTV_SEARCH_CACHE_SIZE = 100; // Maximum number of cached search results
+
 // Default settings
 const YTV_DEFAULT_SETTINGS = {
   useApiKey: false,
@@ -32,6 +37,100 @@ const YTV_DEFAULT_SETTINGS = {
 
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
+
+// Add cache utility functions
+const cacheUtils = {
+  /**
+   * Gets a value from cache
+   * @param {string} key - Cache key
+   * @returns {any|null} Cached value or null if not found/expired
+   */
+  get(key) {
+    try {
+      const item = localStorage.getItem(YTV_CACHE_KEY_PREFIX + key);
+      if (!item) return null;
+      
+      const { value, timestamp } = JSON.parse(item);
+      if (Date.now() - timestamp > YTV_CACHE_DURATION_MS) {
+        localStorage.removeItem(YTV_CACHE_KEY_PREFIX + key);
+        return null;
+      }
+      
+      return value;
+    } catch (error) {
+      console.warn("YT-Video: Error reading from cache:", error);
+      return null;
+    }
+  },
+
+  /**
+   * Sets a value in cache
+   * @param {string} key - Cache key
+   * @param {any} value - Value to cache
+   */
+  set(key, value) {
+    try {
+      const item = {
+        value,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(YTV_CACHE_KEY_PREFIX + key, JSON.stringify(item));
+    } catch (error) {
+      console.warn("YT-Video: Error writing to cache:", error);
+      // If quota exceeded, clear old entries
+      if (error.name === 'QuotaExceededError') {
+        this.cleanup();
+      }
+    }
+  },
+
+  /**
+   * Cleans up old cache entries
+   */
+  cleanup() {
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(YTV_CACHE_KEY_PREFIX)) {
+          keys.push(key);
+        }
+      }
+
+      // Sort by timestamp and remove oldest entries
+      keys.sort((a, b) => {
+        const aTime = JSON.parse(localStorage.getItem(a)).timestamp;
+        const bTime = JSON.parse(localStorage.getItem(b)).timestamp;
+        return bTime - aTime;
+      });
+
+      // Keep only the newest entries up to YTV_SEARCH_CACHE_SIZE
+      keys.slice(YTV_SEARCH_CACHE_SIZE).forEach(key => {
+        localStorage.removeItem(key);
+      });
+    } catch (error) {
+      console.warn("YT-Video: Error cleaning up cache:", error);
+    }
+  },
+
+  /**
+   * Creates a cache key for search results
+   * @param {string} query - Search query
+   * @returns {string} Cache key
+   */
+  getSearchKey(query) {
+    return `search:${query.toLowerCase().trim()}`;
+  },
+
+  /**
+   * Creates a cache key for track-to-video mapping
+   * @param {Object} trackInfo - Track information
+   * @returns {string} Cache key
+   */
+  getTrackKey(trackInfo) {
+    return `track:${trackInfo.artist}:${trackInfo.name}`.toLowerCase().trim();
+  }
+};
 
 /**
  * Loads settings from localStorage
@@ -353,14 +452,24 @@ function openYouTubeVideoForTrack(trackInfo) {
   
   let searchQuery;
   let headerTitle = "YT Video Search";
+  
+  // Check cache for this track
+  const cacheKey = cacheUtils.getTrackKey(trackInfo);
+  const cachedVideo = cacheUtils.get(cacheKey);
+  
+  if (cachedVideo) {
+    console.debug("YT-Video: Using cached video for track:", trackInfo);
+    // If we have a cached video ID, show it directly
+    showVideoPlayer(cachedVideo.id.videoId, 0, [cachedVideo]);
+    return;
+  }
+  
+  // Continue with normal search if no cache hit
   if (trackInfo.name && trackInfo.artist) {
-    // It's a track
     searchQuery = `${trackInfo.artist} - ${trackInfo.name} official video`;
   } else if (!trackInfo.name && trackInfo.artist) {
-    // It's an artist
     searchQuery = `${trackInfo.artist} official video`;
   } else if (trackInfo.name && !trackInfo.artist) {
-    // It's just a name (album?)
     searchQuery = `${trackInfo.name} full album`;
   } else {
     Spicetify.showNotification("Insufficient track information");
@@ -586,7 +695,7 @@ function openYouTubeVideoForTrack(trackInfo) {
       iframe.loading = "lazy";
       
       // Set src with parameters to avoid preloading issues
-      iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/${videoId}?autoplay=${ytvSettings.autoplay ? '1' : '0'}&rel=0&controls=1&showinfo=1&enablejsapi=1`;
+      iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/${videoId}?autoplay=${ytvSettings.autoplay ? '1' : '0'}&rel=0&controls=1&enablejsapi=1&iv_load_policy=3`;
       
       // Set permissions
       iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
@@ -937,15 +1046,30 @@ function openYouTubeVideoForTrack(trackInfo) {
       `;
       
       try {
-        // Fetch search results using YouTube API
-        const encodedQuery = encodeURIComponent(query);
-        const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`);
-        const data = await response.json();
+        // Check cache first
+        const cacheKey = cacheUtils.getSearchKey(query);
+        const cachedResults = cacheUtils.get(cacheKey);
         
-        if (data.error) {
-          throw new Error(data.error.message || "API Error");
+        let data;
+        if (cachedResults) {
+          console.debug("YT-Video: Using cached results for:", query);
+          data = cachedResults;
+        } else {
+          // Fetch from API if not in cache
+          const encodedQuery = encodeURIComponent(query);
+          const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`);
+          data = await response.json();
+          
+          if (data.error) {
+            throw new Error(data.error.message || "API Error");
+          }
+          
+          // Cache the results
+          if (data.items && data.items.length > 0) {
+            cacheUtils.set(cacheKey, data);
+          }
         }
-        
+
         if (!data.items || data.items.length === 0) {
           contentContainer.innerHTML = `
             <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #121212; color: white; text-align: center; padding: 20px;">
@@ -1324,22 +1448,35 @@ async function init() {
   // Load settings
   loadSettings();
   
+  // Clean up old cache entries
+  cacheUtils.cleanup();
+  
   // Add YouTube button
   await addYouTubeButton();
   
   // Add context menu items
   addContextMenuItems();
   
-  // Add event listeners for track changes to update the button
+  // Add event listeners for track changes to check if button still exists
   Spicetify.Player.addEventListener("songchange", async () => {
-    console.debug("YT-Video: Song changed, updating button");
-    await addYouTubeButton();
+    console.debug("YT-Video: Song changed, checking button");
+    // Only re-add the button if it's missing
+    const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
+    if (!existingButton) {
+      console.debug("YT-Video: Button not found, re-adding");
+      await addYouTubeButton();
+    }
   });
   
   // Also listen for app changes
   Spicetify.Platform.History.listen(async () => {
-    console.debug("YT-Video: App navigation detected, updating button");
-    await addYouTubeButton();
+    console.debug("YT-Video: App navigation detected, checking button");
+    // Only re-add the button if it's missing
+    const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
+    if (!existingButton) {
+      console.debug("YT-Video: Button not found, re-adding");
+      await addYouTubeButton();
+    }
   });
   
   console.debug("YT-Video: Initialization complete");

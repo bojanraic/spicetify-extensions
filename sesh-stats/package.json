@@ -1,0 +1,31 @@
+{
+  "name": "sesh-stats",
+  "version": "1.0.0",
+  "description": "Track listening statistics for your current Spotify session",
+  "main": "src/sesh-stats.js",
+  "devDependencies": {
+    "clean-webpack-plugin": "^4.0.0",
+    "terser-webpack-plugin": "^5.3.10",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-manifest-plugin": "^5.0.0"
+  },
+  "scripts": {
+    "build": "webpack --mode=production",
+    "clean": "rm -rf ./dist",
+    "copy": "cp src/sesh-stats.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/sesh-stats.*.js `spicetify path userdata`/Extensions/sesh-stats.js",
+    "deploy": "npm run copy && spicetify config extensions sesh-stats.js && spicetify apply && spicetify enable-devtools",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions sesh-stats.js && spicetify apply",
+    "local": "npm run clean && npm run build && npm run deploy",
+    "undeploy": "rm -rf `spicetify path userdata`/Extensions/sesh-stats.js && spicetify config extensions sesh-stats.js- && spicetify apply"
+  },
+  "author": "Spicetify Community",
+  "license": "MIT",
+  "keywords": [
+    "spicetify",
+    "spicetify-extension",
+    "spotify",
+    "statistics"
+  ]
+} 
