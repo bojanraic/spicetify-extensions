@@ -17,3 +17,7 @@ NOTE: A YouTube API Key is needed for this extension to work.
 ## [Sesh-Stats](./sesh-stats/README.md)
 
 Sesh-Stats is a Spicetify extension that tracks your listening statistics for the current Spotify session, including playback time, song count, and genre distribution. 
+
+## [Focus-Mode](./focus-mode/README.md)
+
+Focus-Mode is a Spicetify extension that creates a distraction-free listening experience by hiding everything except the album art. Shows player controls on mouse movement and exits with a click or Escape key. 

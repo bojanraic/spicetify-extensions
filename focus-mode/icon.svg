@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1DB954"/>
+  
+  <!-- Album art frame -->
+  <rect x="32" y="32" width="64" height="64" rx="4" fill="none" stroke="white" stroke-width="4"/>
+  
+  <!-- Corner arrows -->
+  <!-- Top-left -->
+  <path d="M32 48 L32 32 L48 32" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Top-right -->
+  <path d="M96 48 L96 32 L80 32" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Bottom-left -->
+  <path d="M32 80 L32 96 L48 96" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Bottom-right -->
+  <path d="M96 80 L96 96 L80 96" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Center focus dot -->
+  <circle cx="64" cy="64" r="12" fill="white"/>
+</svg> 
