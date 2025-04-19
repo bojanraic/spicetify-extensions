@@ -52,6 +52,17 @@ let controlsVisible = false;
 let visibilityTimeout = null;
 let focusModeButton = null;
 let reactRootElement = null;
+let wasFullscreenBefore = false; // Track fullscreen state before focus mode activated
+let hasLyrics = false; // Whether the current track has lyrics available
+let isLyricsViewActive = false; // Whether the lyrics split-screen view is active
+let currentLyricsData = null; // To store { lines: [{ time: number, words: string }], ... }
+let activeLyricIndex = -1;
+let originalPath = null; // To store path before navigating to lyrics-plus
+
+// State update callbacks (set by React components to allow external state updates)
+let volumeStateUpdater = null; // Function to update volume state from outside React
+let sliderValueUpdater = null; // Function to update slider visual state from outside React
+let dimOpacityUpdater = null; // Function to update dim opacity state from outside React
 
 // --- Helper Functions ---
 
@@ -140,15 +151,27 @@ function injectFocusModeStyles() {
       width: 100%;
       text-align: center; 
       z-index: 10000; 
-      pointer-events: none; /* Let mouse events pass through */
+      pointer-events: none; /* Let mouse events pass through by default */
       opacity: 0; 
       transition: opacity ${FM_FADE_DURATION_MS}ms ease !important;
       background: rgba(0, 0, 0, 0.7); 
       padding: 16px; 
       color: white; 
+      cursor: none; /* Hide cursor by default on this layer */
+    }
+    /* Allow pointer events on the icon when it's shown */
+    #${FM_TRACK_INFO_ID} .track-title span[title="Toggle Lyrics (L)"] {
+      pointer-events: auto;
+      /* Ensure the SVG icon inherits text color */
+      fill: currentColor;
+      width: 1em;
+      height: 1em;
+      display: inline-block; /* Explicitly set display */
+      cursor: pointer; /* Show pointer specifically on the icon */
     }
     body.${FM_CLASS_NAME}.${FM_CONTROLS_VISIBLE_CLASS} #${FM_TRACK_INFO_ID} {
       opacity: 1 !important;
+      cursor: auto !important; /* Show cursor when overlay is visible */
     }
     #${FM_TRACK_INFO_ID} .track-title {
       font-size: 1.2em; font-weight: bold;
@@ -156,12 +179,120 @@ function injectFocusModeStyles() {
     #${FM_TRACK_INFO_ID} .track-artist {
       font-size: 1em; opacity: 0.8;
     }
+    #${FM_TRACK_INFO_ID} .track-album {
+      font-size: 0.9em; opacity: 0.7; font-style: italic;
+    }
     
     /* Ensure cloned controls inherit necessary styles */
     #${FM_PLAYER_CONTROLS_ID} .main-nowPlayingBar-center {
         /* Add specific overrides if needed */
     }
+    
+    /* --- Lyrics Overlay Styles --- */
+    #fad-lyrics-plus-container.lyrics-overlay-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999; /* Above art (9998), below controls/info (10000) */
+      background: rgba(0, 0, 0, 0.7); /* Semi-transparent background */
+      overflow-y: auto; /* Allow scrolling if lyrics-plus content overflows */
+      pointer-events: none; /* Allow clicks through to bg/art by default */
+      opacity: 0; /* Hidden by default */
+      transition: opacity ${FM_FADE_DURATION_MS}ms ease;
+      
+      /* Assume lyrics-plus provides its own text styling (color, size, alignment) */
+      /* We only provide the container */
+    }
+    
+    /* Enable pointer events if lyrics-plus content needs interaction */
+    /* This might need adjustment depending on lyrics-plus behavior */
+    #fad-lyrics-plus-container.lyrics-overlay-container > * {
+      pointer-events: auto; 
+    }
+    
+    /* Show the overlay when lyrics are active */
+    body.focus-mode-lyrics-active #fad-lyrics-plus-container.lyrics-overlay-container {
+      opacity: 1;
+    }
+    
+    /* Ensure Track Info and Player Controls are definitely above the lyrics */
+    #${FM_TRACK_INFO_ID} { z-index: 10000; }
+    #${FM_PLAYER_CONTROLS_ID} { z-index: 10000; }
+    
+    /* Hide lyrics-plus config button container when lyrics overlay is active */
+    body.focus-mode-lyrics-active #fad-lyrics-plus-container .lyrics-config-button-container {
+      display: none !important; /* Hide the element */
+    }
+    
   `;
+}
+
+/**
+ * Checks if lyrics are available for the current track
+ * @returns {Promise<boolean>} True if lyrics are available
+ */
+async function checkForLyrics() {
+    console.log("Focus Mode: Starting checkForLyrics...");
+    try {
+        if (!Spicetify.Platform || !Spicetify.Platform.PlayerAPI) {
+            console.warn("Focus Mode: Lyrics API (Platform/PlayerAPI) not available");
+            return false;
+        }
+        
+        const currentTrack = Spicetify.Player.data?.item;
+        if (!currentTrack || !currentTrack.uri) {
+            console.warn("Focus Mode: No current track URI to check for lyrics");
+            return false;
+        }
+        console.log("Focus Mode: Current track URI:", currentTrack.uri);
+        
+        // Try Spicetify.Player.getLyrics
+        if (Spicetify.Player.getLyrics) {
+            console.log("Focus Mode: Trying Spicetify.Player.getLyrics()...");
+            try {
+                const lyrics = await Spicetify.Player.getLyrics();
+                const result = !!lyrics && lyrics.lines && lyrics.lines.length > 0;
+                console.log("Focus Mode: Spicetify.Player.getLyrics() result:", result, "(Data:", lyrics, ")");
+                if (result) return true;
+            } catch (e) {
+                console.warn("Focus Mode: Error using getLyrics:", e);
+            }
+        } else {
+            console.log("Focus Mode: Spicetify.Player.getLyrics() not available.");
+        }
+        
+        // Try Spicetify.Platform.PlayerAPI.getPlayerState
+        if (Spicetify.Platform.PlayerAPI.getPlayerState) {
+            console.log("Focus Mode: Trying Spicetify.Platform.PlayerAPI.getPlayerState()...");
+            try {
+                const state = await Spicetify.Platform.PlayerAPI.getPlayerState();
+                const result = !!state?.track?.hasLyrics || !!state?.track?.lyrics;
+                console.log("Focus Mode: Spicetify.Platform.PlayerAPI.getPlayerState() lyrics check result:", result, "(State:", state, ")");
+                if (result) return true;
+            } catch (e) {
+                console.warn("Focus Mode: Error checking player state for lyrics:", e);
+            }
+        } else {
+             console.log("Focus Mode: Spicetify.Platform.PlayerAPI.getPlayerState() not available.");
+        }
+        
+        // Fallback - check metadata properties
+        console.log("Focus Mode: Checking metadata properties as fallback...");
+        const metaHasLyrics = !!(latestTrackData?.has_lyrics === "true" || 
+                                latestTrackData?.lyrics === "true" || 
+                                latestTrackData?.lyrics_id);
+        console.log("Focus Mode: Metadata fallback check result:", metaHasLyrics, "(Metadata:", latestTrackData, ")");
+        if (metaHasLyrics) return true;
+                 
+    } catch (e) {
+        console.error("Focus Mode: Error during checkForLyrics execution:", e);
+        return false;
+    }
+    
+    console.log("Focus Mode: checkForLyrics finished, returning false.");
+    return false; // Default to false if no checks succeeded
 }
 
 /**
@@ -173,18 +304,29 @@ function updateStoredTrackData() {
         console.warn("Focus Mode: Player data item not available for update.");
         latestTrackData = null;
         latestAlbumArtUrl = null;
+        hasLyrics = false;
         return;
     }
 
-    // console.log("Focus Mode: Player.data.item on update check:", JSON.stringify(currentItem, null, 2));
+    // Log the complete Player data for debugging
+    console.log("Focus Mode DEBUG: Complete Player.data:", JSON.stringify(Spicetify.Player.data, null, 2));
+    console.log("Focus Mode: Player.data.item on update check:", JSON.stringify(currentItem, null, 2));
 
     const metadata = currentItem.metadata;
     if (!metadata) {
         console.warn("Focus Mode: Metadata missing in Player data item.");
         latestTrackData = { uri: currentItem.uri }; // Keep URI at least
         latestAlbumArtUrl = null;
+        hasLyrics = false;
     } else {
-        // console.log("Focus Mode: Raw metadata on update check:", JSON.stringify(metadata, null, 2));
+        console.log("Focus Mode: Raw metadata on update check:", JSON.stringify(metadata, null, 2));
+        
+        // Check if Spicetify has a lyrics API
+        if (Spicetify.Platform && Spicetify.Platform.PlayerAPI) {
+            console.log("Focus Mode: Checking PlayerAPI for lyrics capabilities");
+            console.log("Focus Mode: PlayerAPI methods:", Object.keys(Spicetify.Platform.PlayerAPI));
+        }
+        
         latestTrackData = metadata; // Store latest metadata
         const derivedSpotifyUri = metadata?.image_xlarge_url || metadata?.image_large_url || metadata?.image_url;
         // console.log("Focus Mode: Derived spotify URI:", derivedSpotifyUri);
@@ -196,6 +338,18 @@ function updateStoredTrackData() {
             latestAlbumArtUrl = derivedSpotifyUri;
             // console.log("Focus Mode: Updated stored latestAlbumArtUrl (spotify URI):", latestAlbumArtUrl);
         }
+        
+        // Check for lyrics after updating track data
+        console.log("Focus Mode: Initiating lyrics check in updateStoredTrackData...");
+        checkForLyrics().then(result => {
+            hasLyrics = result;
+            console.log("Focus Mode: Lyrics check completed. hasLyrics is now:", hasLyrics);
+            renderFocusModeUI(); // Force UI update after lyrics check
+        }).catch(err => {
+            console.error("Focus Mode: Error during async lyrics check:", err);
+            hasLyrics = false;
+            renderFocusModeUI(); // Force UI update even on error
+        });
     }
 }
 
@@ -240,6 +394,21 @@ const FocusPlayerControls = () => {
     const [volume, setVolume] = react.useState(Spicetify.Player.getVolume());
     const [sliderValue, setSliderValue] = react.useState(volume); // New state for slider visual
     const [dimOpacity, setDimOpacity] = react.useState(0.25); // Default: 25% opaque
+
+    // Register state updaters with global callbacks
+    react.useEffect(() => {
+        // Register the state updaters for external components to use
+        volumeStateUpdater = setVolume;
+        sliderValueUpdater = setSliderValue;
+        dimOpacityUpdater = setDimOpacity;
+        
+        return () => {
+            // Clean up when component unmounts
+            volumeStateUpdater = null;
+            sliderValueUpdater = null;
+            dimOpacityUpdater = null;
+        };
+    }, []);
 
     // --- Volume Listener ---
     react.useEffect(() => {
@@ -359,30 +528,144 @@ const FocusPlayerControls = () => {
     );
 };
 
+/**
+ * Toggles the lyrics view on/off.
+ */
+async function toggleLyricsView() {
+    console.log("Focus Mode: toggleLyricsView called. Current hasLyrics state:", hasLyrics);
+    if (!hasLyrics) {
+        console.warn("Focus Mode: Cannot toggle lyrics view, hasLyrics is false.");
+        Spicetify.showNotification("Lyrics not available for this track.");
+        return;
+    }
+
+    isLyricsViewActive = !isLyricsViewActive;
+    console.log("Focus Mode: Toggling lyrics view. Active:", isLyricsViewActive);
+
+    if (isLyricsViewActive) {
+        // --- Activate Lyrics View (Integrate with lyrics-plus) ---
+        
+        // Store original path
+        originalPath = Spicetify.Platform.History.location.pathname;
+        console.log("Focus Mode: Stored original path:", originalPath);
+        
+        // Navigate to lyrics-plus first (if not already there)
+        if (originalPath !== "/lyrics-plus") {
+            console.log("Focus Mode: Navigating to /lyrics-plus...");
+            Spicetify.Platform.History.push("/lyrics-plus");
+        } else {
+            console.log("Focus Mode: Already on /lyrics-plus path.");
+        }
+        
+        // Wait briefly for lyrics-plus to potentially initialize after navigation
+        setTimeout(() => {
+            console.log("Focus Mode: Delayed activation steps starting...");
+            // Add listener
+            console.log("Focus Mode: Adding lyrics-plus-update listener...");
+            window.addEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
+            
+            // Dispatch event
+            console.log("Focus Mode: Dispatching fad-request...");
+            window.dispatchEvent(new Event("fad-request"));
+            
+            // Add body class
+            document.body.classList.add("focus-mode-lyrics-active");
+            
+            // Clear any old lyrics data
+            currentLyricsData = null; 
+            activeLyricIndex = -1;
+            
+             // Render the UI *after* delay and adding listener/dispatching event
+             console.log("Focus Mode: Calling renderFocusModeUI() inside timeout.");
+            renderFocusModeUI(); 
+            
+        }, 200); // 200ms delay - adjust if needed
+        
+    } else {
+        // --- Deactivate Lyrics View ---
+        console.log("Focus Mode: Removing lyrics-plus-update listener...");
+        window.removeEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
+        
+        // Navigate back first if we changed path
+        if (originalPath && originalPath !== "/lyrics-plus") {
+            console.log("Focus Mode: Navigating back to original path:", originalPath);
+            Spicetify.Platform.History.push(originalPath);
+        } else {
+            console.log("Focus Mode: Not navigating back (was already on lyrics-plus or no path stored).");
+        }
+        originalPath = null; // Reset stored path
+        
+        // Clean up state
+        document.body.classList.remove("focus-mode-lyrics-active");
+        currentLyricsData = null;
+        activeLyricIndex = -1;
+        
+        // Ensure old progress listener is removed
+        Spicetify.Player.removeEventListener("onprogress", handleProgressForLyrics);
+        
+        // Re-render the UI AFTER navigation back
+        renderFocusModeUI();
+    }
+
+    // NOTE: renderFocusModeUI is now called INSIDE the timeout for activation,
+    // and AFTER navigation back for deactivation.
+    // Do not call it synchronously here for activation.
+}
+
+/**
+ * Handles updates received from the lyrics-plus extension.
+ */
+function handleLyricsPlusUpdate(event) {
+    // Log the entire event detail to see its structure
+    console.log("Focus Mode: Received lyrics-plus-update event. Detail:", event.detail);
+    
+    // TODO: Extract relevant data (current line, full lyrics?) from event.detail
+    // TODO: Update currentLyricsData and activeLyricIndex based on event.detail
+    // TODO: Potentially call renderFocusModeUI() if state used by UI changes here
+}
+
+/**
+ * Handles player progress updates for synchronized lyrics scrolling.
+ * THIS FUNCTION IS NO LONGER USED FOR LYRICS - Keeping temporarily for reference/cleanup
+ */
+function handleProgressForLyrics(event) {
+    console.warn("Focus Mode: handleProgressForLyrics called - this should no longer happen for lyrics sync.");
+    // ... (keep the old code here for now, but it shouldn't be called)
+}
+
 const FocusModeUI = ({ trackData, albumArtUrl, controlsVisible }) => {
-    console.log("Focus Mode UI Component: Rendering with props:", { trackData, albumArtUrl, controlsVisible });
     const usableAlbumArtUrl = convertSpotifyImageUri(albumArtUrl);
-    console.log("Focus Mode UI Component: Converted album art URL:", usableAlbumArtUrl);
     const title = trackData?.title || "Loading...";
     const artist = trackData?.artist_name || "";
-
+    const album = trackData?.album_title || "";
+    
     return react.createElement("div", { id: FM_ELEMENT_ID_PREFIX + "content" },
-        // Album Art (Opacity is now controlled by the Dim Slider via direct DOM manipulation)
+        
+        // Always render Album Art
         usableAlbumArtUrl && react.createElement("img", { 
             id: FM_ALBUM_ART_ID, 
             src: usableAlbumArtUrl, 
             alt: "Album Art" 
         }),
         
-        // Track Info (Always rendered, opacity controlled by CSS)
+        // Always render the container for lyrics-plus to inject into
+        react.createElement("div", { 
+            id: "fad-lyrics-plus-container",
+            className: "lyrics-overlay-container" 
+        }),
+        
+        // Always render Track Info Overlay
         react.createElement("div", { id: FM_TRACK_INFO_ID },
-            react.createElement("div", { className: "track-title" }, title),
-            react.createElement("div", { className: "track-artist" }, artist)
+            react.createElement("div", { className: "track-title" }, 
+                title
+            ),
+            react.createElement("div", { className: "track-artist" }, artist),
+            album && react.createElement("div", { className: "track-album" }, album)
         ),
-
-        // Player Controls Container (Always rendered, opacity controlled by CSS)
+        
+        // Always render Player Controls Overlay
         react.createElement("div", { id: FM_PLAYER_CONTROLS_ID }, 
-            react.createElement(FocusPlayerControls, null) // Render our React controls
+            react.createElement(FocusPlayerControls, null)
         )
     );
 };
@@ -434,21 +717,124 @@ function handleMouseMove() {
 }
 
 function handleKeyDown(event) {
-  console.log(`Focus Mode: handleKeyDown received key: ${event.key}`);
-  if (event.key === "Escape" && isFocusModeActive) {
-    console.log("Focus Mode: Escape key pressed, deactivating...");
-    deactivateFocusMode();
+  // Log ALL key presses reaching the listener
+  console.log(`Focus Mode: KeyDown received - Key: ${event.key}, Code: ${event.code}`);
+  
+  if (!isFocusModeActive) return;
+  
+  // console.log(`Focus Mode: handleKeyDown received key: ${event.key}`);
+  
+  // Only process if focus mode is active
+  if (isFocusModeActive) {
+    switch(event.key.toLowerCase()) { // Use toLowerCase for case-insensitivity
+      case "escape":
+        console.log("Focus Mode: Escape key pressed, deactivating...");
+        deactivateFocusMode();
+        break;
+      
+      // Playback controls
+      case " ": // Space bar
+        // console.log("Focus Mode: Space key pressed, toggling play/pause...");
+        Spicetify.Player.togglePlay();
+        event.preventDefault(); // Prevent scrolling on space
+        break;
+      case "arrowleft":
+        // console.log("Focus Mode: Left arrow key pressed, previous track...");
+        Spicetify.Player.back();
+        event.preventDefault();
+        break;
+      case "arrowright":
+        // console.log("Focus Mode: Right arrow key pressed, next track...");
+        Spicetify.Player.next();
+        event.preventDefault();
+        break;
+        
+      // Volume controls
+      case "arrowup":
+        // console.log("Focus Mode: Up arrow key pressed, volume up...");
+        const currentVolume = Spicetify.Player.getVolume();
+        const newVolume = Math.min(1, currentVolume + 0.05); // Increment by 5%, cap at 100%
+        Spicetify.Player.setVolume(newVolume);
+        
+        // Update React state if registered
+        if (volumeStateUpdater && sliderValueUpdater) {
+          volumeStateUpdater(newVolume);
+          sliderValueUpdater(newVolume);
+          // console.log(`Focus Mode: Updated React state for volume to ${newVolume}`);
+        }
+        
+        event.preventDefault();
+        break;
+      case "arrowdown":
+        // console.log("Focus Mode: Down arrow key pressed, volume down...");
+        const curVolume = Spicetify.Player.getVolume();
+        const updatedVolume = Math.max(0, curVolume - 0.05); // Decrement by 5%, floor at 0%
+        Spicetify.Player.setVolume(updatedVolume);
+        
+        // Update React state if registered
+        if (volumeStateUpdater && sliderValueUpdater) {
+          volumeStateUpdater(updatedVolume);
+          sliderValueUpdater(updatedVolume);
+          // console.log(`Focus Mode: Updated React state for volume to ${updatedVolume}`);
+        }
+        
+        event.preventDefault();
+        break;
+        
+      // Dim controls  
+      case "+":
+      case "=": // The + key is often the shifted = key
+        // console.log("Focus Mode: '+' key pressed, increasing album art brightness...");
+        handleDimAdjustment(0.05); // +5% brightness
+        event.preventDefault();
+        break;
+      case "-":
+        // console.log("Focus Mode: '-' key pressed, decreasing album art brightness...");
+        handleDimAdjustment(-0.05); // -5% brightness
+        event.preventDefault();
+        break;
+        
+      // Lyrics Toggle
+      case "l":
+        console.log("Focus Mode: 'L' key pressed, attempting to toggle lyrics...");
+        toggleLyricsView();
+        event.preventDefault();
+        break;
+      
+      default:
+        // Unhandled key
+        break;
+    }
+  }
+}
+
+// Helper function to adjust dim level from keyboard
+function handleDimAdjustment(change) {
+  const albumArt = document.getElementById(FM_ALBUM_ART_ID);
+  if (albumArt) {
+    const currentOpacity = parseFloat(albumArt.style.opacity || 0.25);
+    const newOpacity = Math.max(0, Math.min(1, currentOpacity + change)); // Ensure between 0-1
+    albumArt.style.opacity = newOpacity;
+    
+    // Update React state if registered
+    if (dimOpacityUpdater) {
+      dimOpacityUpdater(newOpacity);
+      console.log(`Focus Mode: Updated React state for dim opacity to ${newOpacity}`);
+    }
+    
+    console.log(`Focus Mode: Adjusted album art brightness to ${newOpacity}`);
   }
 }
 
 function handleClick(event) {
-  console.log("Focus Mode: handleClick detected on target:", event.target);
-  // Check if click is outside the controls container and not on the activation button
+  // console.log("Focus Mode: handleClick detected on target:", event.target);
+  // Check if click is outside BOTH the controls container AND the track info container, and not on the activation button
   if (isFocusModeActive && 
       !event.target.closest(`#${FM_PLAYER_CONTROLS_ID}`) &&
+      !event.target.closest(`#${FM_TRACK_INFO_ID}`) && // Added this check
       focusModeButton && !focusModeButton.element.contains(event.target)) 
   {
-    console.log("Focus Mode: Background click detected, deactivating...");
+    console.log("Focus Mode: Background click detected (outside controls/info), deactivating...");
     deactivateFocusMode();
   }
 }
@@ -472,6 +858,18 @@ async function activateFocusMode() {
   if (isFocusModeActive) return;
   console.log("Focus Mode: Activating...");
   // Controls are now rendered via React, no cloning needed here.
+
+  // Enter fullscreen if document supports it
+  wasFullscreenBefore = !!document.fullscreenElement; // Store current state
+  if (!wasFullscreenBefore && document.documentElement.requestFullscreen) {
+    try {
+      await document.documentElement.requestFullscreen();
+      console.log("Focus Mode: Entered fullscreen mode");
+    } catch (err) {
+      console.warn("Focus Mode: Unable to enter fullscreen mode:", err);
+      // Continue with focus mode regardless of fullscreen success
+    }
+  }
 
   // Inject Styles if they don't exist
   const styleId = "focus-mode-styles";
@@ -530,6 +928,16 @@ function deactivateFocusMode() {
        return; 
    }
    console.log("Focus Mode: Deactivating...");
+
+  // Exit fullscreen if we entered it when activating focus mode
+  if (!wasFullscreenBefore && document.fullscreenElement && document.exitFullscreen) {
+    try {
+      document.exitFullscreen();
+      console.log("Focus Mode: Exited fullscreen mode");
+    } catch (err) {
+      console.warn("Focus Mode: Unable to exit fullscreen mode:", err);
+    }
+  }
 
   // 1. Remove listeners first
   document.removeEventListener("mousemove", handleMouseMove);
