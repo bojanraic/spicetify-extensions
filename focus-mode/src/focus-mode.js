@@ -226,6 +226,55 @@ function injectFocusModeStyles() {
       display: none !important; /* Hide the element */
     }
     
+    /* --- Progress Bar Styling --- */
+    #focus-mode-progress-bar {
+      -webkit-appearance: none; 
+      appearance: none;
+      /* width: 80%; */ /* Width now controlled by flex container */
+      /* max-width: 500px; */ /* Max-width now controlled by flex container */
+      flex-grow: 1; /* Allow input to fill space in flex container */
+      height: 4px; 
+      border-radius: 2px;
+      cursor: pointer;
+      outline: none;
+      /* Use linear gradient for fill effect */
+      background: linear-gradient(to right, 
+          #fff var(--progress-percent, 0%), /* White fill */
+          rgba(255, 255, 255, 0.3) var(--progress-percent, 0%) /* Dim background */
+      );
+    }
+    
+    /* Style the thumb (the draggable part) */
+    #focus-mode-progress-bar::-webkit-slider-thumb {
+      -webkit-appearance: none; 
+      appearance: none;
+      width: 12px; 
+      height: 12px; 
+      background: #fff; /* White thumb */
+      border-radius: 50%;
+      cursor: pointer; 
+    }
+    
+    #focus-mode-progress-bar::-moz-range-thumb {
+      width: 12px; 
+      height: 12px; 
+      background: #fff;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+    }
+    
+    /* Style the track/fill (requires prefixes, might not work perfectly on all browsers/themes) */
+    /* This part is notoriously tricky to style consistently */
+    #focus-mode-progress-bar::-webkit-slider-runnable-track {
+      /* You might need specific selectors based on browser/theme */
+      /* For now, rely on the thumb position */
+    }
+    #focus-mode-progress-bar::-moz-range-track {
+      /* You might need specific selectors based on browser/theme */
+      /* For now, rely on the thumb position */
+    }
+    
   `;
 }
 
@@ -389,11 +438,33 @@ const ButtonIcon = ({ icon, onClick, className = "", style = {} }) => {
     );
 };
 
+// Helper function to format time in MM:SS
+function formatTime(milliseconds) {
+    if (isNaN(milliseconds) || milliseconds < 0) {
+        return "0:00";
+    }
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+}
+
 const FocusPlayerControls = () => {
     const [isPlaying, setIsPlaying] = react.useState(Spicetify.Player.isPlaying());
     const [volume, setVolume] = react.useState(Spicetify.Player.getVolume());
-    const [sliderValue, setSliderValue] = react.useState(volume); // New state for slider visual
-    const [dimOpacity, setDimOpacity] = react.useState(0.25); // Default: 25% opaque
+    const [sliderValue, setSliderValue] = react.useState(volume);
+    const [dimOpacity, setDimOpacity] = react.useState(0.25);
+    
+    // New state for progress bar
+    const [progressPercent, setProgressPercent] = react.useState(0);
+    const [trackDuration, setTrackDuration] = react.useState(Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0);
+    
+    // New state for time strings
+    const [currentTimeString, setCurrentTimeString] = react.useState("0:00");
+    const [durationString, setDurationString] = react.useState(formatTime(trackDuration));
+    
+    // New state for toggling time display
+    const [showRemainingTime, setShowRemainingTime] = react.useState(false);
 
     // Register state updaters with global callbacks
     react.useEffect(() => {
@@ -446,6 +517,56 @@ const FocusPlayerControls = () => {
         };
     }, []);
 
+    // --- Progress Listener and Song Change Handling ---
+    react.useEffect(() => {
+        const updateProgress = (event) => {
+            if (!event || !event.data) return;
+            const currentProgressMs = event.data;
+            const duration = trackDuration || Spicetify.Player.getDuration(); 
+            if (duration > 0) {
+                const newProgressPercent = Math.min(1, Math.max(0, currentProgressMs / duration)); // Clamp between 0 and 1
+                setProgressPercent(newProgressPercent);
+                setCurrentTimeString(formatTime(currentProgressMs)); // Update current time string
+            }
+        };
+
+        const handleSongChange = () => {
+            console.log("Focus Controls: Song changed, updating duration and resetting progress.");
+            setTimeout(() => {
+                 const newDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
+                 setTrackDuration(newDuration);
+                 setDurationString(formatTime(newDuration)); // Update duration string
+                 // Reset progress and current time string
+                 setProgressPercent(0); 
+                 setCurrentTimeString("0:00"); 
+                 console.log("Focus Controls: New track duration:", newDuration);
+            }, 100); 
+        };
+
+        // Initial setup
+        const initialDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
+        setTrackDuration(initialDuration);
+        setDurationString(formatTime(initialDuration));
+        const initialProgress = Spicetify.Player.getProgress();
+        if (initialDuration > 0) {
+             const initialPercent = Math.min(1, Math.max(0, initialProgress / initialDuration));
+             setProgressPercent(initialPercent);
+             setCurrentTimeString(formatTime(initialProgress));
+        }
+
+        // Add listeners
+        Spicetify.Player.addEventListener("onprogress", updateProgress);
+        Spicetify.Player.addEventListener("songchange", handleSongChange);
+        console.log("Focus Controls: Added progress and songchange listeners.");
+
+        // Cleanup
+        return () => {
+            Spicetify.Player.removeEventListener("onprogress", updateProgress);
+            Spicetify.Player.removeEventListener("songchange", handleSongChange);
+            console.log("Focus Controls: Removed progress and songchange listeners.");
+        };
+    }, []); // Only run on mount/unmount
+
     // --- Effect to set initial album art opacity ---
     react.useEffect(() => {
         const albumArt = document.getElementById(FM_ALBUM_ART_ID);
@@ -472,59 +593,117 @@ const FocusPlayerControls = () => {
         }
     };
 
+    // --- Handler for Progress Bar Seeking ---
+    const handleSeekChange = (event) => {
+        const newProgressPercent = parseFloat(event.target.value);
+        setProgressPercent(newProgressPercent); // Update visual immediately
+        const seekToMs = newProgressPercent * trackDuration;
+        setCurrentTimeString(formatTime(seekToMs)); // Update time string immediately on seek
+        if (isFinite(seekToMs)) {
+            Spicetify.Player.seek(seekToMs);
+            console.log(`Focus Mode: Seeking to ${seekToMs}ms (${(newProgressPercent * 100).toFixed(1)}%)`);
+        } else {
+            console.warn("Focus Mode: Invalid seek value calculated.");
+        }
+    };
+
+    // --- New Handler for Toggling Time Display ---
+    const toggleTimeDisplay = () => {
+        setShowRemainingTime(prev => !prev);
+    };
+
     console.log(`Focus Controls: Rendering - isPlaying: ${isPlaying}, volume: ${volume}, dimOpacity: ${dimOpacity}`);
 
     // --- Render ---
-    // The main container will now be a single row for controls
-    return react.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', width: '100%', padding: '0 20px' } },
-        
-        // Dim Slider (Far Left)
-        react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' /* Give it a base width */ } },
-            // Dim Icon
-            react.createElement("svg", { 
-                width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
-                dangerouslySetInnerHTML: { __html: Spicetify.SVGIcons.brightness || Spicetify.SVGIcons.search }
-            }),
-            // Dim Input Slider
+    // Calculate duration display string based on state
+    let durationDisplayString = durationString;
+    if (showRemainingTime) {
+        const currentProgressMs = progressPercent * trackDuration;
+        const remainingMs = Math.max(0, trackDuration - currentProgressMs);
+        durationDisplayString = "-" + formatTime(remainingMs);
+    }
+
+    return react.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '10px' } },
+        // Progress Bar Row (Times + Slider)
+        react.createElement("div", { style: { display: 'flex', alignItems: 'center', width: '80%', maxWidth: '500px', gap: '8px' } },
+            // Current Time
+            react.createElement("span", { id: "focus-mode-current-time", style: { fontSize: '0.8em', minWidth: '35px', textAlign: 'right' } }, currentTimeString),
+            // Progress Bar Input
             react.createElement("input", {
-                type: "range", min: 0, max: 1, step: 0.01, value: dimOpacity,
-                onChange: handleDimChange,
-                style: { flexGrow: 1, cursor: 'pointer' }
-            })
+                type: "range",
+                min: 0,
+                max: 1,
+                step: 0.001, 
+                value: progressPercent,
+                onChange: handleSeekChange,
+                id: "focus-mode-progress-bar", 
+                style: { 
+                    flexGrow: 1, // Allow bar to take available space
+                    cursor: 'pointer', 
+                    height: '4px',
+                    // Set CSS variable for background gradient
+                    '--progress-percent': `${(progressPercent * 100)}%` 
+                } 
+            }),
+            // Duration (now clickable)
+            react.createElement("span", { 
+                id: "focus-mode-duration", 
+                style: { 
+                    fontSize: '0.8em', 
+                    minWidth: '35px', 
+                    textAlign: 'left', 
+                    cursor: 'pointer', // Make it look clickable
+                    userSelect: 'none' // Prevent text selection on click
+                }, 
+                onClick: toggleTimeDisplay // Add the click handler
+            }, durationDisplayString) // Use the calculated display string
         ),
         
-        // Playback Buttons (Center)
-        react.createElement(ButtonIcon, {
-            icon: "skip-back",
-            onClick: Spicetify.Player.back,
-        }),
-        react.createElement(ButtonIcon, {
-            icon: isPlaying ? "pause" : "play",
-            onClick: Spicetify.Player.togglePlay,
-            style: { transform: 'scale(1.1)' } // Make play slightly larger
-        }),
-        react.createElement(ButtonIcon, {
-            icon: "skip-forward",
-            onClick: Spicetify.Player.next,
-        }),
-        
-        // Volume Slider (Far Right)
-        react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' /* Give it a base width */ } },
-            // Volume Icon
-            react.createElement("svg", { 
-                width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
-                dangerouslySetInnerHTML: { __html: volume > 0.5 ? Spicetify.SVGIcons.volume : (volume > 0 ? Spicetify.SVGIcons['volume-low'] : Spicetify.SVGIcons['volume-off']) }
-            }),
-            // Volume Input Slider
-            react.createElement("input", {
-                type: "range", min: 0, max: 1, step: 0.01, value: sliderValue, 
-                onChange: handleVolumeChange,
-                style: { flexGrow: 1, cursor: 'pointer' }
-            })
+        // Existing Controls Row
+        react.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', width: '100%', padding: '0 20px' } },
+             // Dim Slider (Far Left)
+             react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
+                // Dim Icon
+                react.createElement("svg", { 
+                    width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
+                    dangerouslySetInnerHTML: { __html: Spicetify.SVGIcons.brightness || Spicetify.SVGIcons.search }
+                }),
+                // Dim Input Slider
+                react.createElement("input", {
+                    type: "range", min: 0, max: 1, step: 0.01, value: dimOpacity,
+                    onChange: handleDimChange,
+                    style: { flexGrow: 1, cursor: 'pointer' }
+                })
+             ),
+             // Playback Buttons (Center)
+             react.createElement(ButtonIcon, {
+                 icon: "skip-back",
+                 onClick: Spicetify.Player.back,
+             }),
+             react.createElement(ButtonIcon, {
+                 icon: isPlaying ? "pause" : "play",
+                 onClick: Spicetify.Player.togglePlay,
+                 style: { transform: 'scale(1.1)' } // Make play slightly larger
+             }),
+             react.createElement(ButtonIcon, {
+                 icon: "skip-forward",
+                 onClick: Spicetify.Player.next,
+             }),
+             // Volume Slider (Far Right)
+             react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
+                 // Volume Icon
+                 react.createElement("svg", { 
+                     width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
+                     dangerouslySetInnerHTML: { __html: volume > 0.5 ? Spicetify.SVGIcons.volume : (volume > 0 ? Spicetify.SVGIcons['volume-low'] : Spicetify.SVGIcons['volume-off']) }
+                 }),
+                 // Volume Input Slider
+                 react.createElement("input", {
+                     type: "range", min: 0, max: 1, step: 0.01, value: sliderValue, 
+                     onChange: handleVolumeChange,
+                     style: { flexGrow: 1, cursor: 'pointer' }
+                 })
+             )
         )
-        
-        // Removed the separate Playback Buttons container
-        // Removed the separate Sliders container
     );
 };
 
