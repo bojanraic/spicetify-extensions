@@ -64,6 +64,10 @@ let volumeStateUpdater = null; // Function to update volume state from outside R
 let sliderValueUpdater = null; // Function to update slider visual state from outside React
 let dimOpacityUpdater = null; // Function to update dim opacity state from outside React
 
+// --- Forward declaration for components needed by render/unmount ---
+// These will be properly assigned inside main()
+let FocusModeUI = null;
+
 // --- Helper Functions ---
 
 /**
@@ -230,32 +234,33 @@ function injectFocusModeStyles() {
     #focus-mode-progress-bar {
       -webkit-appearance: none; 
       appearance: none;
-      /* width: 80%; */ /* Width now controlled by flex container */
-      /* max-width: 500px; */ /* Max-width now controlled by flex container */
-      flex-grow: 1; /* Allow input to fill space in flex container */
+      flex-grow: 1; 
       height: 4px; 
       border-radius: 2px;
       cursor: pointer;
       outline: none;
-      /* Use linear gradient for fill effect */
       background: linear-gradient(to right, 
-          #fff var(--progress-percent, 0%), /* White fill */
-          rgba(255, 255, 255, 0.3) var(--progress-percent, 0%) /* Dim background */
+          #fff var(--progress-percent, 0%), 
+          rgba(255, 255, 255, 0.3) var(--progress-percent, 0%)
       );
     }
     
-    /* Style the thumb (the draggable part) */
-    #focus-mode-progress-bar::-webkit-slider-thumb {
+    /* Style the thumb (shared by all range inputs) */
+    #focus-mode-progress-bar::-webkit-slider-thumb,
+    .focus-mode-volume-slider::-webkit-slider-thumb,
+    .focus-mode-dim-slider::-webkit-slider-thumb {
       -webkit-appearance: none; 
       appearance: none;
       width: 12px; 
       height: 12px; 
-      background: #fff; /* White thumb */
+      background: #fff; 
       border-radius: 50%;
       cursor: pointer; 
     }
     
-    #focus-mode-progress-bar::-moz-range-thumb {
+    #focus-mode-progress-bar::-moz-range-thumb,
+    .focus-mode-volume-slider::-moz-range-thumb,
+    .focus-mode-dim-slider::-moz-range-thumb {
       width: 12px; 
       height: 12px; 
       background: #fff;
@@ -264,15 +269,36 @@ function injectFocusModeStyles() {
       cursor: pointer;
     }
     
-    /* Style the track/fill (requires prefixes, might not work perfectly on all browsers/themes) */
-    /* This part is notoriously tricky to style consistently */
-    #focus-mode-progress-bar::-webkit-slider-runnable-track {
-      /* You might need specific selectors based on browser/theme */
-      /* For now, rely on the thumb position */
+    /* --- Volume Slider Styling --- */
+    .focus-mode-volume-slider {
+      -webkit-appearance: none; 
+      appearance: none;
+      flex-grow: 1; 
+      height: 4px; 
+      border-radius: 2px;
+      cursor: pointer;
+      outline: none;
+      /* Use linear gradient for fill effect, same as progress bar */
+      background: linear-gradient(to right, 
+          #fff var(--volume-percent, 0%), /* White fill */
+          rgba(255, 255, 255, 0.3) var(--volume-percent, 0%) /* Dim background */
+      );
     }
-    #focus-mode-progress-bar::-moz-range-track {
-      /* You might need specific selectors based on browser/theme */
-      /* For now, rely on the thumb position */
+    
+    /* --- Dim Slider Styling --- */
+    .focus-mode-dim-slider {
+       -webkit-appearance: none; 
+      appearance: none;
+      flex-grow: 1; 
+      height: 4px; 
+      border-radius: 2px;
+      cursor: pointer;
+      outline: none;
+      /* Apply fill effect using --dim-percent variable */
+      background: linear-gradient(to right, 
+          #fff var(--dim-percent, 25%), /* White fill, default 25% */
+          rgba(255, 255, 255, 0.3) var(--dim-percent, 25%) /* Dim background */
+      ); 
     }
     
   `;
@@ -402,475 +428,45 @@ function updateStoredTrackData() {
     }
 }
 
-// --- React Components ---
-
-const ButtonIcon = ({ icon, onClick, className = "", style = {} }) => {
-    // Spicetify.SVGIcons is an object where keys are icon names and values are SVG strings
-    const svgPath = Spicetify.SVGIcons[icon];
-    console.log(`Focus Mode ButtonIcon: Icon key='${icon}', Retrieved SVG path data:`, svgPath);
-
-    if (!svgPath) {
-        console.warn(`Focus Mode ButtonIcon: Invalid SVG path data for icon key '${icon}'`);
-        return null;
-    }
-
-    return react.createElement("button", {
-        className: `focus-mode-control-button ${className}`, // Use a custom class if needed + passed class
-        onClick: onClick,
-        style: { ...FM_CONTROL_BUTTON_STYLE, ...style }, // Combine constant style with passed props
-    }, svgPath ? 
-        react.createElement("svg", { 
-           width: 16, 
-           height: 16, 
-           viewBox: "0 0 16 16", 
-           fill: "currentColor", 
-           dangerouslySetInnerHTML: { __html: svgPath }
-       }) : 
-       // Fallback/placeholder if svgPath is invalid
-       react.createElement("svg", { 
-           width: 16, 
-           height: 16, 
-           viewBox: "0 0 16 16", 
-           fill: "rgba(255, 255, 255, 0.5)" 
-        }, react.createElement("path", { 
-           d: "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z" 
-       }))
-    );
-};
-
-// Helper function to format time in MM:SS
-function formatTime(milliseconds) {
-    if (isNaN(milliseconds) || milliseconds < 0) {
-        return "0:00";
-    }
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-}
-
-const FocusPlayerControls = () => {
-    const [isPlaying, setIsPlaying] = react.useState(Spicetify.Player.isPlaying());
-    const [volume, setVolume] = react.useState(Spicetify.Player.getVolume());
-    const [sliderValue, setSliderValue] = react.useState(volume);
-    const [dimOpacity, setDimOpacity] = react.useState(0.25);
-    
-    // New state for progress bar
-    const [progressPercent, setProgressPercent] = react.useState(0);
-    const [trackDuration, setTrackDuration] = react.useState(Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0);
-    
-    // New state for time strings
-    const [currentTimeString, setCurrentTimeString] = react.useState("0:00");
-    const [durationString, setDurationString] = react.useState(formatTime(trackDuration));
-    
-    // New state for toggling time display
-    const [showRemainingTime, setShowRemainingTime] = react.useState(false);
-
-    // Register state updaters with global callbacks
-    react.useEffect(() => {
-        // Register the state updaters for external components to use
-        volumeStateUpdater = setVolume;
-        sliderValueUpdater = setSliderValue;
-        dimOpacityUpdater = setDimOpacity;
-        
-        return () => {
-            // Clean up when component unmounts
-            volumeStateUpdater = null;
-            sliderValueUpdater = null;
-            dimOpacityUpdater = null;
-        };
-    }, []);
-
-    // --- Volume Listener ---
-    react.useEffect(() => {
-        const updateVolumeState = ({ data }) => {
-             console.log("Focus Controls: Volume changed externally:", data);
-             setVolume(data); // Update the confirmed volume state
-             setSliderValue(data); // Sync slider value with confirmed state
-        };
-        Spicetify.Player.addEventListener("onvolumechange", updateVolumeState);
-        console.log("Focus Controls: Added volume listener.");
-
-        // Fetch initial volume again in case it changed before listener attach
-        const initialVolume = Spicetify.Player.getVolume();
-        setVolume(initialVolume);
-        setSliderValue(initialVolume);
-
-        return () => {
-            Spicetify.Player.removeEventListener("onvolumechange", updateVolumeState);
-            console.log("Focus Controls: Removed volume listener.");
-        };
-    }, []);
-
-    // --- Play/Pause Listener ---
-    react.useEffect(() => {
-        const updatePlayState = () => setIsPlaying(Spicetify.Player.isPlaying());
-        Spicetify.Player.addEventListener("onplaypause", updatePlayState);
-        console.log("Focus Controls: Added play/pause listener.");
-
-        // Initial check in case state changed before listener attached
-        updatePlayState(); // Initial check
-
-        return () => {
-            Spicetify.Player.removeEventListener("onplaypause", updatePlayState);
-            console.log("Focus Controls: Removed play/pause listener.");
-        };
-    }, []);
-
-    // --- Progress Listener and Song Change Handling ---
-    react.useEffect(() => {
-        const updateProgress = (event) => {
-            if (!event || !event.data) return;
-            const currentProgressMs = event.data;
-            const duration = trackDuration || Spicetify.Player.getDuration(); 
-            if (duration > 0) {
-                const newProgressPercent = Math.min(1, Math.max(0, currentProgressMs / duration)); // Clamp between 0 and 1
-                setProgressPercent(newProgressPercent);
-                setCurrentTimeString(formatTime(currentProgressMs)); // Update current time string
-            }
-        };
-
-        const handleSongChange = () => {
-            console.log("Focus Controls: Song changed, updating duration and resetting progress.");
-            setTimeout(() => {
-                 const newDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
-                 setTrackDuration(newDuration);
-                 setDurationString(formatTime(newDuration)); // Update duration string
-                 // Reset progress and current time string
-                 setProgressPercent(0); 
-                 setCurrentTimeString("0:00"); 
-                 console.log("Focus Controls: New track duration:", newDuration);
-            }, 100); 
-        };
-
-        // Initial setup
-        const initialDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
-        setTrackDuration(initialDuration);
-        setDurationString(formatTime(initialDuration));
-        const initialProgress = Spicetify.Player.getProgress();
-        if (initialDuration > 0) {
-             const initialPercent = Math.min(1, Math.max(0, initialProgress / initialDuration));
-             setProgressPercent(initialPercent);
-             setCurrentTimeString(formatTime(initialProgress));
-        }
-
-        // Add listeners
-        Spicetify.Player.addEventListener("onprogress", updateProgress);
-        Spicetify.Player.addEventListener("songchange", handleSongChange);
-        console.log("Focus Controls: Added progress and songchange listeners.");
-
-        // Cleanup
-        return () => {
-            Spicetify.Player.removeEventListener("onprogress", updateProgress);
-            Spicetify.Player.removeEventListener("songchange", handleSongChange);
-            console.log("Focus Controls: Removed progress and songchange listeners.");
-        };
-    }, []); // Only run on mount/unmount
-
-    // --- Effect to set initial album art opacity ---
-    react.useEffect(() => {
-        const albumArt = document.getElementById(FM_ALBUM_ART_ID);
-        if (albumArt) {
-            console.log(`Focus Controls: Setting initial dim opacity to ${dimOpacity}`);
-            albumArt.style.opacity = dimOpacity;
-        }
-    }, []); // Run only on mount
-
-    // --- Event Handlers for Sliders ---
-    const handleVolumeChange = (event) => {
-        const newVolume = parseFloat(event.target.value);
-        setSliderValue(newVolume); // Update slider visual immediately
-        // setVolume(newVolume); // DO NOT update confirmed volume here
-        Spicetify.Player.setVolume(newVolume); // Tell the player to change volume
-    };
-
-    const handleDimChange = (event) => {
-        const newOpacity = parseFloat(event.target.value);
-        setDimOpacity(newOpacity);
-        const albumArt = document.getElementById(FM_ALBUM_ART_ID);
-        if (albumArt) {
-            albumArt.style.opacity = newOpacity;
-        }
-    };
-
-    // --- Handler for Progress Bar Seeking ---
-    const handleSeekChange = (event) => {
-        const newProgressPercent = parseFloat(event.target.value);
-        setProgressPercent(newProgressPercent); // Update visual immediately
-        const seekToMs = newProgressPercent * trackDuration;
-        setCurrentTimeString(formatTime(seekToMs)); // Update time string immediately on seek
-        if (isFinite(seekToMs)) {
-            Spicetify.Player.seek(seekToMs);
-            console.log(`Focus Mode: Seeking to ${seekToMs}ms (${(newProgressPercent * 100).toFixed(1)}%)`);
-        } else {
-            console.warn("Focus Mode: Invalid seek value calculated.");
-        }
-    };
-
-    // --- New Handler for Toggling Time Display ---
-    const toggleTimeDisplay = () => {
-        setShowRemainingTime(prev => !prev);
-    };
-
-    console.log(`Focus Controls: Rendering - isPlaying: ${isPlaying}, volume: ${volume}, dimOpacity: ${dimOpacity}`);
-
-    // --- Render ---
-    // Calculate duration display string based on state
-    let durationDisplayString = durationString;
-    if (showRemainingTime) {
-        const currentProgressMs = progressPercent * trackDuration;
-        const remainingMs = Math.max(0, trackDuration - currentProgressMs);
-        durationDisplayString = "-" + formatTime(remainingMs);
-    }
-
-    return react.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '10px' } },
-        // Progress Bar Row (Times + Slider)
-        react.createElement("div", { style: { display: 'flex', alignItems: 'center', width: '80%', maxWidth: '500px', gap: '8px' } },
-            // Current Time
-            react.createElement("span", { id: "focus-mode-current-time", style: { fontSize: '0.8em', minWidth: '35px', textAlign: 'right' } }, currentTimeString),
-            // Progress Bar Input
-            react.createElement("input", {
-                type: "range",
-                min: 0,
-                max: 1,
-                step: 0.001, 
-                value: progressPercent,
-                onChange: handleSeekChange,
-                id: "focus-mode-progress-bar", 
-                style: { 
-                    flexGrow: 1, // Allow bar to take available space
-                    cursor: 'pointer', 
-                    height: '4px',
-                    // Set CSS variable for background gradient
-                    '--progress-percent': `${(progressPercent * 100)}%` 
-                } 
-            }),
-            // Duration (now clickable)
-            react.createElement("span", { 
-                id: "focus-mode-duration", 
-                style: { 
-                    fontSize: '0.8em', 
-                    minWidth: '35px', 
-                    textAlign: 'left', 
-                    cursor: 'pointer', // Make it look clickable
-                    userSelect: 'none' // Prevent text selection on click
-                }, 
-                onClick: toggleTimeDisplay // Add the click handler
-            }, durationDisplayString) // Use the calculated display string
-        ),
-        
-        // Existing Controls Row
-        react.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', width: '100%', padding: '0 20px' } },
-             // Dim Slider (Far Left)
-             react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
-                // Dim Icon
-                react.createElement("svg", { 
-                    width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
-                    dangerouslySetInnerHTML: { __html: Spicetify.SVGIcons.brightness || Spicetify.SVGIcons.search }
-                }),
-                // Dim Input Slider
-                react.createElement("input", {
-                    type: "range", min: 0, max: 1, step: 0.01, value: dimOpacity,
-                    onChange: handleDimChange,
-                    style: { flexGrow: 1, cursor: 'pointer' }
-                })
-             ),
-             // Playback Buttons (Center)
-             react.createElement(ButtonIcon, {
-                 icon: "skip-back",
-                 onClick: Spicetify.Player.back,
-             }),
-             react.createElement(ButtonIcon, {
-                 icon: isPlaying ? "pause" : "play",
-                 onClick: Spicetify.Player.togglePlay,
-                 style: { transform: 'scale(1.1)' } // Make play slightly larger
-             }),
-             react.createElement(ButtonIcon, {
-                 icon: "skip-forward",
-                 onClick: Spicetify.Player.next,
-             }),
-             // Volume Slider (Far Right)
-             react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
-                 // Volume Icon
-                 react.createElement("svg", { 
-                     width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor",
-                     dangerouslySetInnerHTML: { __html: volume > 0.5 ? Spicetify.SVGIcons.volume : (volume > 0 ? Spicetify.SVGIcons['volume-low'] : Spicetify.SVGIcons['volume-off']) }
-                 }),
-                 // Volume Input Slider
-                 react.createElement("input", {
-                     type: "range", min: 0, max: 1, step: 0.01, value: sliderValue, 
-                     onChange: handleVolumeChange,
-                     style: { flexGrow: 1, cursor: 'pointer' }
-                 })
-             )
-        )
-    );
-};
-
-/**
- * Toggles the lyrics view on/off.
- */
-async function toggleLyricsView() {
-    console.log("Focus Mode: toggleLyricsView called. Current hasLyrics state:", hasLyrics);
-    if (!hasLyrics) {
-        console.warn("Focus Mode: Cannot toggle lyrics view, hasLyrics is false.");
-        Spicetify.showNotification("Lyrics not available for this track.");
-        return;
-    }
-
-    isLyricsViewActive = !isLyricsViewActive;
-    console.log("Focus Mode: Toggling lyrics view. Active:", isLyricsViewActive);
-
-    if (isLyricsViewActive) {
-        // --- Activate Lyrics View (Integrate with lyrics-plus) ---
-        
-        // Store original path
-        originalPath = Spicetify.Platform.History.location.pathname;
-        console.log("Focus Mode: Stored original path:", originalPath);
-        
-        // Navigate to lyrics-plus first (if not already there)
-        if (originalPath !== "/lyrics-plus") {
-            console.log("Focus Mode: Navigating to /lyrics-plus...");
-            Spicetify.Platform.History.push("/lyrics-plus");
-        } else {
-            console.log("Focus Mode: Already on /lyrics-plus path.");
-        }
-        
-        // Wait briefly for lyrics-plus to potentially initialize after navigation
-        setTimeout(() => {
-            console.log("Focus Mode: Delayed activation steps starting...");
-            // Add listener
-            console.log("Focus Mode: Adding lyrics-plus-update listener...");
-            window.addEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
-            
-            // Dispatch event
-            console.log("Focus Mode: Dispatching fad-request...");
-            window.dispatchEvent(new Event("fad-request"));
-            
-            // Add body class
-            document.body.classList.add("focus-mode-lyrics-active");
-            
-            // Clear any old lyrics data
-            currentLyricsData = null; 
-            activeLyricIndex = -1;
-            
-             // Render the UI *after* delay and adding listener/dispatching event
-             console.log("Focus Mode: Calling renderFocusModeUI() inside timeout.");
-            renderFocusModeUI(); 
-            
-        }, 200); // 200ms delay - adjust if needed
-        
-    } else {
-        // --- Deactivate Lyrics View ---
-        console.log("Focus Mode: Removing lyrics-plus-update listener...");
-        window.removeEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
-        
-        // Navigate back first if we changed path
-        if (originalPath && originalPath !== "/lyrics-plus") {
-            console.log("Focus Mode: Navigating back to original path:", originalPath);
-            Spicetify.Platform.History.push(originalPath);
-        } else {
-            console.log("Focus Mode: Not navigating back (was already on lyrics-plus or no path stored).");
-        }
-        originalPath = null; // Reset stored path
-        
-        // Clean up state
-        document.body.classList.remove("focus-mode-lyrics-active");
-        currentLyricsData = null;
-        activeLyricIndex = -1;
-        
-        // Ensure old progress listener is removed
-        Spicetify.Player.removeEventListener("onprogress", handleProgressForLyrics);
-        
-        // Re-render the UI AFTER navigation back
-        renderFocusModeUI();
-    }
-
-    // NOTE: renderFocusModeUI is now called INSIDE the timeout for activation,
-    // and AFTER navigation back for deactivation.
-    // Do not call it synchronously here for activation.
-}
-
-/**
- * Handles updates received from the lyrics-plus extension.
- */
-function handleLyricsPlusUpdate(event) {
-    // Log the entire event detail to see its structure
-    console.log("Focus Mode: Received lyrics-plus-update event. Detail:", event.detail);
-    
-    // TODO: Extract relevant data (current line, full lyrics?) from event.detail
-    // TODO: Update currentLyricsData and activeLyricIndex based on event.detail
-    // TODO: Potentially call renderFocusModeUI() if state used by UI changes here
-}
-
-/**
- * Handles player progress updates for synchronized lyrics scrolling.
- * THIS FUNCTION IS NO LONGER USED FOR LYRICS - Keeping temporarily for reference/cleanup
- */
-function handleProgressForLyrics(event) {
-    console.warn("Focus Mode: handleProgressForLyrics called - this should no longer happen for lyrics sync.");
-    // ... (keep the old code here for now, but it shouldn't be called)
-}
-
-const FocusModeUI = ({ trackData, albumArtUrl, controlsVisible }) => {
-    const usableAlbumArtUrl = convertSpotifyImageUri(albumArtUrl);
-    const title = trackData?.title || "Loading...";
-    const artist = trackData?.artist_name || "";
-    const album = trackData?.album_title || "";
-    
-    return react.createElement("div", { id: FM_ELEMENT_ID_PREFIX + "content" },
-        
-        // Always render Album Art
-        usableAlbumArtUrl && react.createElement("img", { 
-            id: FM_ALBUM_ART_ID, 
-            src: usableAlbumArtUrl, 
-            alt: "Album Art" 
-        }),
-        
-        // Always render the container for lyrics-plus to inject into
-        react.createElement("div", { 
-            id: "fad-lyrics-plus-container",
-            className: "lyrics-overlay-container" 
-        }),
-        
-        // Always render Track Info Overlay
-        react.createElement("div", { id: FM_TRACK_INFO_ID },
-            react.createElement("div", { className: "track-title" }, 
-                title
-            ),
-            react.createElement("div", { className: "track-artist" }, artist),
-            album && react.createElement("div", { className: "track-album" }, album)
-        ),
-        
-        // Always render Player Controls Overlay
-        react.createElement("div", { id: FM_PLAYER_CONTROLS_ID }, 
-            react.createElement(FocusPlayerControls, null)
-        )
-    );
-};
-
 // --- Rendering Logic ---
 
 function renderFocusModeUI() {
-    if (!isFocusModeActive || !reactRootElement) return;
+    // Safety checks added
+    if (!isFocusModeActive || !reactRootElement || !react || !reactDOM || !FocusModeUI) {
+        console.warn("Focus Mode: Skipping render, prerequisite missing.", { isFocusModeActive, reactRootElement: !!reactRootElement, react: !!react, reactDOM: !!reactDOM, FocusModeUI: !!FocusModeUI });
+        return;
+    }
     
     console.log(`Focus Mode: Rendering React UI. Controls visible: ${controlsVisible}`, { 
         dataForRender: { trackData: latestTrackData, albumArtUrl: latestAlbumArtUrl } 
     });
-    reactDOM.render(
-        react.createElement(FocusModeUI, { 
-            trackData: latestTrackData, 
-            albumArtUrl: latestAlbumArtUrl, 
-            controlsVisible: controlsVisible 
-        }),
-        reactRootElement
-    );
+    try {
+        reactDOM.render(
+            react.createElement(FocusModeUI, { 
+                trackData: latestTrackData, 
+                albumArtUrl: latestAlbumArtUrl, 
+                controlsVisible: controlsVisible 
+            }),
+            reactRootElement
+        );
+    } catch (e) {
+        console.error("Focus Mode: Error during reactDOM.render:", e);
+        // Optionally show a notification to the user
+        Spicetify.showNotification("Error rendering Focus Mode UI. Check console.", true);
+    }
 }
 
 function unmountFocusModeUI() {
-    if (reactRootElement) {
-        reactDOM.unmountComponentAtNode(reactRootElement);
-        console.log("Focus Mode: Unmounted React UI.");
+    // Safety check added
+    if (reactRootElement && reactDOM) {
+        try {
+            reactDOM.unmountComponentAtNode(reactRootElement);
+            console.log("Focus Mode: Unmounted React UI.");
+        } catch (e) {
+            console.error("Focus Mode: Error during reactDOM.unmountComponentAtNode:", e);
+        }
+    } else {
+        console.warn("Focus Mode: Skipping unmount, prerequisite missing.", { reactRootElement: !!reactRootElement, reactDOM: !!reactDOM });
     }
 }
 
@@ -1028,6 +624,122 @@ function handleSongChange() {
             renderFocusModeUI(); // Re-render with new data
         }
     }, 100); // Slightly longer delay might be safer
+}
+
+/**
+ * Toggles the lyrics view on/off.
+ */
+async function toggleLyricsView() {
+    console.log("Focus Mode: toggleLyricsView called. Current hasLyrics state:", hasLyrics);
+    if (!hasLyrics) {
+        console.warn("Focus Mode: Cannot toggle lyrics view, hasLyrics is false.");
+        Spicetify.showNotification("Lyrics not available for this track.");
+        return;
+    }
+
+    isLyricsViewActive = !isLyricsViewActive;
+    console.log("Focus Mode: Toggling lyrics view. Active:", isLyricsViewActive);
+
+    if (isLyricsViewActive) {
+        // --- Activate Lyrics View (Integrate with lyrics-plus) ---
+        
+        // Store original path
+        originalPath = Spicetify.Platform.History.location.pathname;
+        console.log("Focus Mode: Stored original path:", originalPath);
+        
+        // Navigate to lyrics-plus first (if not already there)
+        if (originalPath !== "/lyrics-plus") {
+            console.log("Focus Mode: Navigating to /lyrics-plus...");
+            Spicetify.Platform.History.push("/lyrics-plus");
+        } else {
+            console.log("Focus Mode: Already on /lyrics-plus path.");
+        }
+        
+        // Wait briefly for lyrics-plus to potentially initialize after navigation
+        setTimeout(() => {
+            console.log("Focus Mode: Delayed activation steps starting...");
+            // Add listener
+            console.log("Focus Mode: Adding lyrics-plus-update listener...");
+            window.addEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
+            
+            // Dispatch event
+            console.log("Focus Mode: Dispatching fad-request...");
+            window.dispatchEvent(new Event("fad-request"));
+            
+            // Add body class
+            document.body.classList.add("focus-mode-lyrics-active");
+            
+            // Clear any old lyrics data
+            currentLyricsData = null; 
+            activeLyricIndex = -1;
+            
+             // Render the UI *after* delay and adding listener/dispatching event
+             console.log("Focus Mode: Calling renderFocusModeUI() inside timeout.");
+            renderFocusModeUI(); 
+            
+        }, 200); // 200ms delay - adjust if needed
+        
+    } else {
+        // --- Deactivate Lyrics View ---
+        console.log("Focus Mode: Removing lyrics-plus-update listener...");
+        window.removeEventListener("lyrics-plus-update", handleLyricsPlusUpdate);
+        
+        // Navigate back first if we changed path
+        if (originalPath && originalPath !== "/lyrics-plus") {
+            console.log("Focus Mode: Navigating back to original path:", originalPath);
+            Spicetify.Platform.History.push(originalPath);
+        } else {
+            console.log("Focus Mode: Not navigating back (was already on lyrics-plus or no path stored).");
+        }
+        originalPath = null; // Reset stored path
+        
+        // Clean up state
+        document.body.classList.remove("focus-mode-lyrics-active");
+        currentLyricsData = null;
+        activeLyricIndex = -1;
+        
+        // Ensure old progress listener is removed
+        Spicetify.Player.removeEventListener("onprogress", handleProgressForLyrics);
+        
+        // Re-render the UI AFTER navigation back
+        renderFocusModeUI();
+    }
+
+    // NOTE: renderFocusModeUI is now called INSIDE the timeout for activation,
+    // and AFTER navigation back for deactivation.
+    // Do not call it synchronously here for activation.
+}
+
+/**
+ * Handles updates received from the lyrics-plus extension.
+ */
+function handleLyricsPlusUpdate(event) {
+    // Log the entire event detail to see its structure
+    console.log("Focus Mode: Received lyrics-plus-update event. Detail:", event.detail);
+    
+    // TODO: Extract relevant data (current line, full lyrics?) from event.detail
+    // TODO: Update currentLyricsData and activeLyricIndex based on event.detail
+    // TODO: Potentially call renderFocusModeUI() if state used by UI changes here
+}
+
+/**
+ * Handles player progress updates for synchronized lyrics scrolling.
+ * THIS FUNCTION IS NO LONGER USED FOR LYRICS - Keeping temporarily for reference/cleanup
+ */
+function handleProgressForLyrics(event) {
+    console.warn("Focus Mode: handleProgressForLyrics called - this should no longer happen for lyrics sync.");
+    // ... (keep the old code here for now, but it shouldn't be called)
+}
+
+// Helper function to format time in MM:SS
+function formatTime(milliseconds) {
+    if (isNaN(milliseconds) || milliseconds < 0) {
+        return "0:00";
+    }
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
 // --- Activation / Deactivation ---
@@ -1255,6 +967,7 @@ function addFocusModeButton() {
   }
 }
 
+// ==================== MAIN FUNCTION ====================
 function main() {
     console.log("Focus Mode: Initializing (main function started)...");
     
@@ -1280,11 +993,272 @@ function main() {
     // Assign React variables now that they are ready
     react = Spicetify.React;
     reactDOM = Spicetify.ReactDOM;
+    console.log("Focus Mode: React and ReactDOM assigned.");
+
+    // ==================== DEFINE COMPONENTS HERE ====================
+    const ButtonIcon = ({ icon, onClick, className = "", style = {} }) => {
+        // Uses react.createElement - safe now
+        const svgPath = Spicetify.SVGIcons[icon];
+        // console.log(`Focus Mode ButtonIcon: Icon key='${icon}', Retrieved SVG path data:`, svgPath);
+
+        if (!svgPath) {
+            console.warn(`Focus Mode ButtonIcon: Invalid SVG path data for icon key '${icon}'`);
+            return null;
+        }
+
+        return react.createElement("button", {
+            className: `focus-mode-control-button ${className}`, 
+            onClick: onClick,
+            style: { ...FM_CONTROL_BUTTON_STYLE, ...style }, 
+        }, svgPath ? 
+            react.createElement("svg", { 
+               width: 16, 
+               height: 16, 
+               viewBox: "0 0 16 16", 
+               fill: "currentColor", 
+               dangerouslySetInnerHTML: { __html: svgPath }
+           }) : 
+           react.createElement("svg", { 
+               width: 16, 
+               height: 16, 
+               viewBox: "0 0 16 16", 
+               fill: "rgba(255, 255, 255, 0.5)" 
+            }, react.createElement("path", { 
+               d: "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z" 
+           }))
+        );
+    };
+
+    const FocusPlayerControls = () => {
+        // Uses react hooks - safe now
+        const [isPlaying, setIsPlaying] = react.useState(Spicetify.Player.isPlaying());
+        const [volume, setVolume] = react.useState(Spicetify.Player.getVolume());
+        const [sliderValue, setSliderValue] = react.useState(volume);
+        const [dimOpacity, setDimOpacity] = react.useState(0.25);
+        const [progressPercent, setProgressPercent] = react.useState(0);
+        const [trackDuration, setTrackDuration] = react.useState(Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0);
+        const [currentTimeString, setCurrentTimeString] = react.useState("0:00");
+        const [durationString, setDurationString] = react.useState(formatTime(trackDuration));
+        const [showRemainingTime, setShowRemainingTime] = react.useState(false);
+
+        const volumeSliderRef = react.useRef(null);
+        const dimSliderRef = react.useRef(null); 
+        // const progressBarRef = react.useRef(null); 
+
+        const updateSliderFill = (element, variableName, value) => {
+            if (element) {
+                element.style.setProperty(variableName, `${(value * 100)}%`);
+            }
+        };
+
+        react.useEffect(() => {
+            updateSliderFill(volumeSliderRef.current, '--volume-percent', sliderValue);
+        }, [sliderValue]);
+
+        react.useEffect(() => {
+            updateSliderFill(dimSliderRef.current, '--dim-percent', dimOpacity);
+        }, [dimOpacity]);
+
+        react.useEffect(() => {
+            volumeStateUpdater = setVolume;
+            sliderValueUpdater = setSliderValue;
+            dimOpacityUpdater = setDimOpacity;
+            return () => {
+                volumeStateUpdater = null;
+                sliderValueUpdater = null;
+                dimOpacityUpdater = null;
+            };
+        }, []);
+
+        react.useEffect(() => {
+            const updateVolumeState = ({ data }) => {
+                 // console.log("Focus Controls: Volume changed externally:", data);
+                 setVolume(data); 
+                 setSliderValue(data); 
+            };
+            Spicetify.Player.addEventListener("onvolumechange", updateVolumeState);
+            const initialVolume = Spicetify.Player.getVolume();
+            setVolume(initialVolume);
+            setSliderValue(initialVolume);
+            return () => {
+                Spicetify.Player.removeEventListener("onvolumechange", updateVolumeState);
+                // console.log("Focus Controls: Removed volume listener.");
+            };
+        }, []);
+
+        react.useEffect(() => {
+            const updatePlayState = () => setIsPlaying(Spicetify.Player.isPlaying());
+            Spicetify.Player.addEventListener("onplaypause", updatePlayState);
+            updatePlayState();
+            return () => {
+                Spicetify.Player.removeEventListener("onplaypause", updatePlayState);
+                // console.log("Focus Controls: Removed play/pause listener.");
+            };
+        }, []);
+
+        react.useEffect(() => {
+            const updateProgress = (event) => {
+                if (!event || !event.data) return;
+                const currentProgressMs = event.data;
+                // Need to access trackDuration state here
+                const duration = trackDuration || Spicetify.Player.getDuration(); 
+                if (duration > 0) {
+                    const newProgressPercent = Math.min(1, Math.max(0, currentProgressMs / duration));
+                    setProgressPercent(newProgressPercent);
+                    setCurrentTimeString(formatTime(currentProgressMs)); 
+                }
+            };
+
+            const handleSongChangeInternal = () => {
+                // console.log("Focus Controls: Song changed, updating duration and resetting progress.");
+                setTimeout(() => {
+                     const newDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
+                     setTrackDuration(newDuration);
+                     setDurationString(formatTime(newDuration)); 
+                     setProgressPercent(0); 
+                     setCurrentTimeString("0:00"); 
+                     // console.log("Focus Controls: New track duration:", newDuration);
+                }, 100); 
+            };
+
+            const initialDuration = Spicetify.Player.data?.item?.duration?.milliseconds || Spicetify.Player.getDuration() || 0;
+            setTrackDuration(initialDuration);
+            setDurationString(formatTime(initialDuration));
+            const initialProgress = Spicetify.Player.getProgress();
+            if (initialDuration > 0) {
+                 const initialPercent = Math.min(1, Math.max(0, initialProgress / initialDuration));
+                 setProgressPercent(initialPercent);
+                 setCurrentTimeString(formatTime(initialProgress));
+            }
+
+            Spicetify.Player.addEventListener("onprogress", updateProgress);
+            Spicetify.Player.addEventListener("songchange", handleSongChangeInternal);
+            // console.log("Focus Controls: Added progress and songchange listeners.");
+
+            return () => {
+                Spicetify.Player.removeEventListener("onprogress", updateProgress);
+                Spicetify.Player.removeEventListener("songchange", handleSongChangeInternal);
+                // console.log("Focus Controls: Removed progress and songchange listeners.");
+            };
+        }, []); 
+
+        react.useEffect(() => {
+            const albumArt = document.getElementById(FM_ALBUM_ART_ID);
+            if (albumArt) {
+                // console.log(`Focus Controls: Setting initial dim opacity to ${dimOpacity}`);
+                albumArt.style.opacity = dimOpacity;
+            }
+        }, []); 
+
+        const handleVolumeChange = (event) => {
+            const newVolume = parseFloat(event.target.value);
+            setSliderValue(newVolume); 
+            Spicetify.Player.setVolume(newVolume); 
+        };
+
+        const handleDimChange = (event) => {
+            const newOpacity = parseFloat(event.target.value);
+            setDimOpacity(newOpacity); 
+            const albumArt = document.getElementById(FM_ALBUM_ART_ID);
+            if (albumArt) {
+                albumArt.style.opacity = newOpacity;
+            }
+        };
+
+        const handleSeekChange = (event) => {
+            const newProgressPercent = parseFloat(event.target.value);
+            setProgressPercent(newProgressPercent); 
+            // Need trackDuration state here
+            const seekToMs = newProgressPercent * trackDuration;
+            setCurrentTimeString(formatTime(seekToMs)); 
+            if (isFinite(seekToMs)) {
+                Spicetify.Player.seek(seekToMs);
+                // console.log(`Focus Mode: Seeking to ${seekToMs}ms (${(newProgressPercent * 100).toFixed(1)}%)`);
+            } else {
+                console.warn("Focus Mode: Invalid seek value calculated.");
+            }
+        };
+
+        const toggleTimeDisplay = () => {
+            setShowRemainingTime(prev => !prev);
+        };
+
+        // console.log(`Focus Controls: Rendering - isPlaying: ${isPlaying}, volume: ${volume}, dimOpacity: ${dimOpacity}`);
+
+        let durationDisplayString = durationString;
+        if (showRemainingTime) {
+            const currentProgressMs = progressPercent * trackDuration;
+            const remainingMs = Math.max(0, trackDuration - currentProgressMs);
+            durationDisplayString = "-" + formatTime(remainingMs);
+        }
+
+        return react.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '10px' } },
+            react.createElement("div", { style: { display: 'flex', alignItems: 'center', width: '80%', maxWidth: '500px', gap: '8px' } },
+                react.createElement("span", { id: "focus-mode-current-time", style: { fontSize: '0.8em', minWidth: '35px', textAlign: 'right' } }, currentTimeString),
+                react.createElement("input", {
+                    type: "range", min: 0, max: 1, step: 0.001, 
+                    value: progressPercent,
+                    onChange: handleSeekChange,
+                    id: "focus-mode-progress-bar", 
+                    style: { 
+                        flexGrow: 1, cursor: 'pointer', height: '4px',
+                        '--progress-percent': `${(progressPercent * 100)}%` 
+                    } 
+                }),
+                react.createElement("span", { 
+                    id: "focus-mode-duration", 
+                    style: { fontSize: '0.8em', minWidth: '35px', textAlign: 'left', cursor: 'pointer', userSelect: 'none'}, 
+                    onClick: toggleTimeDisplay
+                }, durationDisplayString)
+            ),
+            react.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', width: '100%', padding: '0 20px' } },
+                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
+                    react.createElement("svg", { width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor", dangerouslySetInnerHTML: { __html: Spicetify.SVGIcons.brightness || Spicetify.SVGIcons.search }}),
+                    react.createElement("input", { type: "range", min: 0, max: 1, step: 0.01, value: dimOpacity, onChange: handleDimChange, ref: dimSliderRef, style: { flexGrow: 1, cursor: 'pointer' }, className: "focus-mode-dim-slider" })
+                 ),
+                 react.createElement(ButtonIcon, { icon: "skip-back", onClick: Spicetify.Player.back }),
+                 react.createElement(ButtonIcon, { icon: isPlaying ? "pause" : "play", onClick: Spicetify.Player.togglePlay, style: { transform: 'scale(1.1)' } }),
+                 react.createElement(ButtonIcon, { icon: "skip-forward", onClick: Spicetify.Player.next }),
+                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: '5px', flexBasis: '150px' } },
+                     react.createElement("svg", { width: 16, height: 16, viewBox: "0 0 16 16", fill: "currentColor", dangerouslySetInnerHTML: { __html: volume > 0.5 ? Spicetify.SVGIcons.volume : (volume > 0 ? Spicetify.SVGIcons['volume-low'] : Spicetify.SVGIcons['volume-off']) }}),
+                     react.createElement("input", { type: "range", min: 0, max: 1, step: 0.01, value: sliderValue, onChange: handleVolumeChange, ref: volumeSliderRef, className: "focus-mode-volume-slider" })
+                 )
+            )
+        );
+    };
+
+    // Assign FocusModeUI component function AFTER defining dependencies
+    FocusModeUI = ({ trackData, albumArtUrl, controlsVisible }) => {
+        // This component uses react.createElement - safe now
+        const usableAlbumArtUrl = convertSpotifyImageUri(albumArtUrl);
+        const title = trackData?.title || "Loading...";
+        const artist = trackData?.artist_name || "";
+        const album = trackData?.album_title || "";
+        
+        return react.createElement("div", { id: FM_ELEMENT_ID_PREFIX + "content" },
+            usableAlbumArtUrl && react.createElement("img", { id: FM_ALBUM_ART_ID, src: usableAlbumArtUrl, alt: "Album Art" }),
+            react.createElement("div", { id: "fad-lyrics-plus-container", className: "lyrics-overlay-container" }),
+            react.createElement("div", { id: FM_TRACK_INFO_ID },
+                react.createElement("div", { className: "track-title" }, title),
+                react.createElement("div", { className: "track-artist" }, artist),
+                album && react.createElement("div", { className: "track-album" }, album)
+            ),
+            react.createElement("div", { id: FM_PLAYER_CONTROLS_ID }, 
+                react.createElement(FocusPlayerControls, null)
+            )
+        );
+    };
+    // ================================================================
+
 
     // Ensure clean state on init/reload
+    // Need to call deactivate AFTER components are defined if it uses them
+    // But deactivateFocusMode calls unmount, which needs reactDOM, so it's okay here.
     deactivateFocusMode(); 
     latestTrackData = null; 
     latestAlbumArtUrl = null;
+    hasLyrics = false;
+    isLyricsViewActive = false;
 
     // Add Spicetify button
     addFocusModeButton();
@@ -1293,7 +1267,7 @@ function main() {
     Spicetify.Player.addEventListener("songchange", handleSongChange);
       
     // Attempt to capture initial state immediately after a short delay
-    setTimeout(handleSongChange, 500); // Give player ample time initially
+    setTimeout(handleSongChange, 500); 
       
     console.log("Focus Mode: Initialized successfully.");
 }

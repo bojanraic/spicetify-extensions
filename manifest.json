@@ -71,7 +71,7 @@
   {
     "name": "Focus Mode",
     "description": "Creates a distraction-free listening experience with only album art visible",
-    "main": "focus-mode/dist/focus-mode.9ca96d7ee435fabd8ba4.js",
+    "main": "focus-mode/dist/focus-mode.dfcf511ba0d0f8033cf5.js",
     "preview": "focus-mode/icon.png",
     "readme": "focus-mode/README.md",
     "authors": [

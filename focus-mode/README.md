@@ -6,9 +6,9 @@ Focus-Mode is a Spicetify extension that creates a distraction-free listening ex
 - Adds a focus mode button to the player controls bar
 - When activated, hides everything in the Spotify UI except the album art
 - Automatically enters fullscreen mode for a completely immersive experience
-- Shows player controls and track information on mouse movement
+- Shows player controls, track information, and a seekable progress bar on mouse movement
 - Controls automatically hide after 3 seconds of inactivity
-- Pressing 'L' toggles a lyrics overlay (requires the `lyrics-plus` custom app to be installed)
+- Pressing 'L' toggles a lyrics overlay (requires the `lyrics-plus` custom app to be installed/enabled; built-in with default Spicetify installations)
 - Exit focus mode by clicking anywhere (outside controls) or pressing the Escape key
 
 ## Features
@@ -16,8 +16,9 @@ Focus-Mode is a Spicetify extension that creates a distraction-free listening ex
 - Automatically enters fullscreen mode when activated
 - Shows player controls and track information on mouse movement
 - Displays complete track info including title, artist name, and album name
+- Includes a seekable progress bar with current time and duration display (click duration to toggle time remaining)
 - Includes interactive Volume and Album Art Dimming sliders in the controls overlay
-- Optional Lyrics Overlay: Toggles a lyrics display overlay (powered by the external `lyrics-plus` custom app) using the 'L' key.
+- Optional Lyrics Overlay: Toggles a lyrics display overlay (powered by the `lyrics-plus` custom app) using the 'L' key.
 - Controls automatically hide after 3 seconds of inactivity
 - Keyboard shortcuts for playback control and volume adjustment
 - Exit focus mode by clicking anywhere (outside controls) or pressing Escape
@@ -28,15 +29,15 @@ When Focus Mode is active, the following keyboard shortcuts are available:
 
 | Key | Function |
 |-----|----------|
-| Space | Play/Pause |
-| ← Left Arrow | Previous track |
-| → Right Arrow | Next track |
-| ↑ Up Arrow | Volume up |
-| ↓ Down Arrow | Volume down |
-| + | Increase album art brightness |
-| - | Decrease album art brightness |
-| L | Toggle Lyrics Overlay (requires `lyrics-plus` app) |
-| Esc | Exit Focus Mode |
+| `Space` | Play/Pause |
+| `←` Left Arrow | Previous track |
+| `→` Right Arrow | Next track |
+| `↑` Up Arrow | Volume up |
+| `↓` Down Arrow | Volume down |
+| `+` | Increase album art brightness |
+| `-` | Decrease album art brightness |
+| `L` | Toggle Lyrics Overlay (requires `lyrics-plus` app) |
+| `Esc` | Exit Fullscreen/Focus Mode |
 
 ## Screenshots
 
@@ -55,6 +56,12 @@ When Focus Mode is active, the following keyboard shortcuts are available:
 ![Focus-Mode Controls Screenshot](02_screenshot_controls.png)
 
 *Player controls, volume slider, and dim slider visible on mouse movement.*
+
+**Focus-Mode Lyrics Display:**
+
+![Focus-Mode Lyrics Screenshot](03_screenshot_lyrics.png)
+
+*Lyrics (via `lyrics-plus`); toggled with `L` keyboard shortcutnp.*
 
 ##  More
 Like it? Star it!    
