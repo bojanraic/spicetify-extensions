@@ -10,7 +10,6 @@ body:
       placeholder: "Example: macOS Sonoma"
     validations:
       required: true
-
   - type: input
     id: spotify-version
     attributes:
@@ -19,7 +18,6 @@ body:
       placeholder: "Example: 1.21.2.123-3a22721f"
     validations:
       required: true
-
   - type: input
     id: spicetify-version
     attributes:
@@ -28,7 +26,19 @@ body:
       placeholder: "Example: 1.24.2"
     validations:
       required: true
-
+  - type: dropdown
+    id: spicetify-extensions-installed
+    attributes:
+      label: My Spicetify Extensions Installed
+      multiple: true
+      options:
+        - private-session
+        - side-hide
+        - YT-video
+        - sesh-stats
+        - focus-mode
+    validations:
+      required: false
   - type: textarea
     id: spicetify-extensions
     attributes:
@@ -36,11 +46,26 @@ body:
       description: Please list other installed/enabled Spicetify extensions; type None if you're only using Private Session 
     validations:
       required: true
-
+  - type: input
+    id: current-theme
+    attributes:
+      label: Current Theme Name
+      description: "The Spicetify theme you're currently using"
+      placeholder: "Example: Default"
+    validations:
+      required: false
+  - type: input
+    id: screen-resolution
+    attributes:
+      label: Screen Resolution
+      description: "Your screen resolution"
+      placeholder: "Example: 1920x1080"
+    validations:
+      required: false
   - type: textarea
     id: issue-description
     attributes:
-      label: Description
+      label: Issue Description
       description: Please explain the observed behavior and why it's an issue
     validations:
       required: true
