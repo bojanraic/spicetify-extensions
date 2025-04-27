@@ -4,6 +4,7 @@ Spicetify Side Hide is a simple Spicetify extension that hides the Spotify sideb
 
 ## How it works
 - On window initialization, find Friends Activity button, Now Playing button, and the sidebar and hide them via CSS.
+- Queue and Device Connect functionality remains
 
 ##  More
 Like it? Star it!    

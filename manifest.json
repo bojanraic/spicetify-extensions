@@ -18,7 +18,7 @@
   {
     "name": "Side Hide",
     "description": "Hides the sidebar (Friends Activity & Now Playing) and associated action buttons",
-    "main": "side-hide/dist/side-hide.3c0937582332ff33e5d6.js",
+    "main": "side-hide/dist/side-hide.e8fd6cbcedb098f3c535.js",
     "preview": "side-hide/icon.png",
     "readme": "side-hide/README.md",
     "authors": [

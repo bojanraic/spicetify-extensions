@@ -1,282 +1,167 @@
-// UI Text constants
 const SH_NOW_PLAYING_TEXT = "Now playing view";
+const SH_NOW_PLAYING_CLOSE_ID = "PanelHeader_CloseButton";
+const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
+const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] > button`;
+const SH_NOW_PLAYING_HIDE_BTN = `button[aria-label="Hide Now Playing view"]`;
+
 const SH_FRIEND_ACTIVITY_FEED_TEXT = "Friend Activity";
-
-// CSS/DOM constants
-const SH_RIGHT_SIDEBAR_CLASS = "Root__right-sidebar";
-const SH_MAIN_VIEW_CLASS = "Root__main-view";
-const SH_NAV_BAR_CLASS = "Root__nav-bar";
-const SH_ROOT_CLASS = "Root";
-const SH_MAIN_VIEW_CONTAINER_CLASS = "main-view-container";
-const SH_SCROLL_NODE_CLASS = "main-view-container__scroll-node";
-
-// CSS Selectors
 const SH_SIDEBAR_CSS_SELECTORS = {
-  ROOT: `.${SH_ROOT_CLASS}`,
-  RIGHT_SIDEBAR: `div.${SH_RIGHT_SIDEBAR_CLASS}`,
-  MAIN_VIEW: `div.${SH_MAIN_VIEW_CLASS}`,
-  NAV_BAR: `.${SH_NAV_BAR_CLASS}`,
-  MAIN_VIEW_CONTAINER: `.${SH_MAIN_VIEW_CONTAINER_CLASS}`,
-  SCROLL_NODE: `.${SH_SCROLL_NODE_CLASS}`,
   FRIENDS_ACTIVITY_BUTTON: `button.main-topBar-buddyFeed[aria-label='${SH_FRIEND_ACTIVITY_FEED_TEXT}']`,
   NOW_PLAYING_BUTTON: `button.main-genericButton-button[aria-label='${SH_NOW_PLAYING_TEXT}']`,
 };
 
-// Configuration constants
-const SH_RETRY_LIMIT = 5;
-const SH_DELAY_MS = 120;
-const SH_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Sp[o|ice]tify loads
-const SH_STYLE_ID = "side-hide-layout-fix";
+const SH_RETRY_LIMIT = 30;
+const SH_DELAY_MS = 300;
+const SH_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Spotify/Spicetify loads
 
-// CSS rules for fixing sidebar resize and layout issues
-const SH_LAYOUT_CSS = `
-  /* Fix for sidebar resize issues - prevent content overlap */
-  .${SH_MAIN_VIEW_CLASS} {
-    margin-left: 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    grid-column: 2 / 3 !important;
-  }
-  
-  /* Ensure the content container uses proper sizing */
-  .${SH_MAIN_VIEW_CONTAINER_CLASS} {
-    margin-left: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
-    box-sizing: border-box !important;
-  }
-  
-  /* Ensure scroll container takes full width */
-  .${SH_SCROLL_NODE_CLASS} {
-    width: 100% !important;
-  }
-  
-  /* Ensure the Root grid layout respects the nav bar size */
-  .${SH_ROOT_CLASS} {
-    grid-template-columns: auto 1fr !important;
-  }
-  
-  /* Custom layout for nav bar to ensure it sizes properly */
-  .${SH_NAV_BAR_CLASS} {
-    position: relative !important;
-    z-index: 2 !important;
-  }
-`;
-
-/**
- * Attempts to find a DOM element using the provided selector
- * @param {string} selector - CSS selector to find the element
- * @param {Element|null} parent - Optional parent element to search within
- * @returns {Promise<Element|null>} The found element or null if not found
- */
 async function getElement(selector, parent = null) {
   for (let retryCount = 0; retryCount < SH_RETRY_LIMIT; retryCount++) {
-    const element = parent instanceof Element 
-      ? parent.querySelector(selector) 
-      : document.querySelector(selector);
-    
+    console.log(`Side-Hide: In getElement for '${selector}' - retry: ${retryCount + 1}`);
+    const element = parent != null ? parent.querySelector(selector) : document.querySelector(selector);
     if (element) {
-      console.debug(`Side-Hide: Found element '${selector}' on attempt ${retryCount + 1}`);
       return element;
     }
-    await new Promise(resolve => setTimeout(resolve, SH_DELAY_MS));
+    else {
+      await new Promise(resolve => setTimeout(resolve, SH_DELAY_MS));
+    }
   }
-  console.warn(`Side-Hide: Failed to find element '${selector}' after ${SH_RETRY_LIMIT} attempts`);
-  return null;
+  return null; // Return null if element not found after retries
 }
 
-/**
- * Removes an element found by selector
- * @param {string} selector - CSS selector for the element to remove
- */
-async function removeElementBySelector(selector) {
+async function hideElementBySelector(selector) {
   const element = await getElement(selector);
   if (!element) {
-    console.warn(`Side-Hide: Cannot remove non-existent element '${selector}'`);
+    console.log(`Side-Hide: Element with selector '${selector}' not found to hide`);
     return;
   }
-
-  console.debug(`Side-Hide: Removing element '${selector}'`);
-  element.remove();
+  console.log(`Side-Hide: Hiding element with selector: '${selector}'`);
+  element.style.setProperty('width', '0', 'important');
+  element.style.setProperty('height', '0', 'important');
+  element.style.setProperty('display', 'none', 'important');
 }
 
-/**
- * Injects a stylesheet into the document head
- * @param {string} cssContent - CSS content to inject
- * @param {string} styleId - ID for the style element
- * @returns {HTMLStyleElement} The created style element
- */
-function injectStylesheet(cssContent, styleId) {
-  // Check if the stylesheet already exists
-  let styleElement = document.getElementById(styleId);
+async function clickButtonIfExists(selector, parent = null, retryInterval = 50, maxRetries = 10) {
+  let button = null;
+  let attempts = 0;
   
-  // If it exists, remove it to ensure we have the latest version
-  if (styleElement) {
-    styleElement.remove();
-  }
-  
-  // Create and inject the new stylesheet
-  styleElement = document.createElement('style');
-  styleElement.id = styleId;
-  styleElement.innerHTML = cssContent;
-  document.head.appendChild(styleElement);
-  
-  return styleElement;
-}
-
-/**
- * Handles left sidebar resize issues to prevent overlap with main content
- */
-function addLeftSidebarResizeHandling() {
-  // Inject our layout fixes stylesheet
-  injectStylesheet(SH_LAYOUT_CSS, SH_STYLE_ID);
-  
-  // Find the left sidebar and main content elements
-  const leftSidebar = document.querySelector(SH_SIDEBAR_CSS_SELECTORS.NAV_BAR);
-  const mainContent = document.querySelector(SH_SIDEBAR_CSS_SELECTORS.MAIN_VIEW);
-  
-  if (!leftSidebar || !mainContent) {
-    console.warn('Side-Hide: Could not find left sidebar or main content elements');
-    return;
-  }
-  
-  // Create a ResizeObserver to actively monitor the nav bar width
-  const resizeObserver = new ResizeObserver(() => {
-    // This just ensures the observer stays active
-    console.debug('Side-Hide: Detected sidebar resize');
-  });
-  
-  // Start observing the left sidebar
-  resizeObserver.observe(leftSidebar);
-  
-  // Add a MutationObserver to track class/style changes on root element
-  // This helps catch any attempts by Spotify to override our layout
-  const rootObserver = new MutationObserver(mutations => {
-    mutations.forEach(mutation => {
-      if (mutation.attributeName === 'style' || mutation.attributeName === 'class') {
-        // Re-apply our stylesheet by removing and re-adding it
-        injectStylesheet(SH_LAYOUT_CSS, SH_STYLE_ID);
-      }
-    });
-  });
-  
-  // Get the root element and observe it
-  const rootElement = document.querySelector(SH_SIDEBAR_CSS_SELECTORS.ROOT);
-  if (rootElement) {
-    rootObserver.observe(rootElement, {
-      attributes: true,
-      attributeFilter: ['style', 'class']
-    });
-  }
-  
-  /**
-   * Applies fixes for the left sidebar width
-   */
-  function applyLayoutFixes() {
-    const navBarWidth = leftSidebar.offsetWidth;
-    if (rootElement) {
-      // Apply the width to the grid template columns
-      rootElement.style.setProperty('--left-sidebar-width', `${navBarWidth}px`);
+  // Try to find the button
+  while (!button && attempts < maxRetries) {
+    button = parent 
+      ? parent.querySelector(selector) 
+      : document.querySelector(selector);
+      
+    if (!button) {
+      await new Promise(resolve => setTimeout(resolve, retryInterval));
+      attempts++;
     }
   }
   
-  // Run the initial fix
-  applyLayoutFixes();
-  
-  // Add resize event listener to catch window resize events
-  window.addEventListener('resize', () => {
-    applyLayoutFixes();
-  });
-}
-
-/**
- * Removes all sidebar elements
- */
-async function hideSide() {
-  // Find and remove the right sidebar container
-  const rightSidebar = await getElement(SH_SIDEBAR_CSS_SELECTORS.RIGHT_SIDEBAR);
-  if (rightSidebar) {
-    console.debug(`Side-Hide: Found right sidebar, removing it from DOM`);
-    
-    // Find the parent container that holds both main content and sidebar
-    const rootContainer = rightSidebar.parentElement;
-    if (rootContainer) {
-      // Find the main content area before removing the sidebar
-      const mainContent = await getElement(SH_SIDEBAR_CSS_SELECTORS.MAIN_VIEW);
-      
-      // Remove the sidebar from the DOM completely
-      rootContainer.removeChild(rightSidebar);
-      
-      // Add data attribute to indicate sidebar is hidden
-      rootContainer.setAttribute('data-right-sidebar-hidden', 'true');
-      
-      // Apply CSS to fix grid layout and prevent overlap
-      if (mainContent) {
-        // Adjust the main content area width and grid properties
-        mainContent.style.width = '100%';
-        mainContent.style.maxWidth = '100%';
-        
-        // Adjust grid column to span full width
-        mainContent.style.gridColumn = '1 / -1';
-        
-        // Add a resize event listener to ensure layout remains fixed if window is resized
-        window.addEventListener('resize', function() {
-          requestAnimationFrame(() => {
-            mainContent.style.width = '100%';
-            mainContent.style.maxWidth = '100%';
-            mainContent.style.gridColumn = '1 / -1';
-          });
-        });
-        
-        // Add a MutationObserver to maintain our adjustments if Spotify tries to change them
-        const observer = new MutationObserver((mutations) => {
-          mutations.forEach((mutation) => {
-            if (mutation.type === 'attributes' && 
-                (mutation.attributeName === 'style' || mutation.attributeName === 'class')) {
-              requestAnimationFrame(() => {
-                mainContent.style.width = '100%';
-                mainContent.style.maxWidth = '100%';
-                mainContent.style.gridColumn = '1 / -1';
-              });
-            }
-          });
-        });
-        
-        observer.observe(mainContent, { attributes: true });
-      }
-    } else {
-      console.warn(`Side-Hide: Could not find parent container of right sidebar`);
-      // Fallback to just hiding it if we can't remove it properly
-      rightSidebar.style.display = 'none';
-    }
+  if (button) {
+    console.log(`Side-Hide: Found button with selector: '${selector}', clicking it`);
+    button.click();
+    return true;
   } else {
-    console.warn(`Side-Hide: Could not find right sidebar to remove`);
+    console.log(`Side-Hide: Button with selector '${selector}' not found after ${maxRetries} attempts`);
+    return false;
   }
-  
-  // Handle left sidebar resize issues by adding listeners to fix content overflow
-  addLeftSidebarResizeHandling();
-  
-  // Hide the Friend Activity button in the top bar
-  await removeElementBySelector(SH_SIDEBAR_CSS_SELECTORS.FRIENDS_ACTIVITY_BUTTON);
-  
-  // Hide the Now Playing button in the bottom bar
-  await removeElementBySelector(SH_SIDEBAR_CSS_SELECTORS.NOW_PLAYING_BUTTON);
 }
 
-/**
- * Waits for a condition to be true before executing a callback
- * @param {function(): boolean} condition - Function that returns true when ready
- * @param {function(): Promise<void>} callback - Async function to execute when ready
- */
+async function hideSide() {
+  console.log("Side-Hide: Initializing...");
+  // Set up MutationObserver to detect and handle Now Playing view when it appears
+  const observer = new MutationObserver(async (mutations) => {
+    // Check if Now Playing view exists
+    const nowPlayingAside = document.querySelector(SH_NOW_PLAYING_ASIDE);
+    if (nowPlayingAside) {
+      console.log(`Side-Hide: Now Playing view detected by observer`);
+      
+      // First, try to click the "Hide Now Playing view" button
+      const hideButtonClicked = await clickButtonIfExists(SH_NOW_PLAYING_HIDE_BTN, nowPlayingAside);
+      
+      if (!hideButtonClicked) {
+        // If the specific hide button wasn't found/clicked, try the close button
+        console.log(`Side-Hide: Trying alternate close button`);
+        await clickButtonIfExists(SH_NOW_PLAYING_ASIDE_CLOSE_BTN, nowPlayingAside);
+      }
+      
+      // After a short delay, hide the aside if it's still visible
+      setTimeout(async () => {
+        const stillVisible = document.querySelector(SH_NOW_PLAYING_ASIDE);
+        if (stillVisible) {
+          console.log(`Side-Hide: Now Playing view still visible after clicking buttons, forcing hide`);
+          stillVisible.style.display = 'none';
+        }
+      }, 500);
+    }
+  });
+  
+  // Start observing the document
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-label', 'class', 'style']
+  });
+  
+  console.log(`Side-Hide: Observer set up for Now Playing view`);
+  
+  // Handle initial Now Playing view if it's already open
+  const nowPlayingAside = await getElement(SH_NOW_PLAYING_ASIDE);
+  if (nowPlayingAside) {
+    console.log(`Side-Hide: Now Playing aside element visible on initialization.`);
+    
+    // First try the "Hide Now Playing view" button
+    const hideButtonClicked = await clickButtonIfExists(SH_NOW_PLAYING_HIDE_BTN, nowPlayingAside);
+    
+    if (!hideButtonClicked) {
+      // If the specific hide button wasn't found/clicked, try the close button
+      console.log(`Side-Hide: Trying alternate close button on initialization`);
+      const closeButtonClicked = await clickButtonIfExists(SH_NOW_PLAYING_ASIDE_CLOSE_BTN, nowPlayingAside);
+      
+      if (!closeButtonClicked) {
+        console.log(`Side-Hide: Could not find any close buttons, forcing hide`);
+        nowPlayingAside.style.display = 'none !important';
+        nowPlayingAside.style.visibility = 'hidden !important';
+        console.log("Side-Hide: Now Playing view hidden on initialization");
+      }
+    }
+  }
+  
+  // Hide the buttons in the UI
+  for (const key in SH_SIDEBAR_CSS_SELECTORS) {
+    await hideElementBySelector(SH_SIDEBAR_CSS_SELECTORS[key]);
+  }
+  
+  console.log("Side-Hide: Initialization complete");
+  return observer;
+}
+
 const sh_main = async (condition, callback) => {
-  while (!condition()) {
+  let attempts = 0;
+  
+  console.log("Side-Hide: Waiting for Spicetify to initialize...");
+  
+  while (!condition() && attempts < SH_RETRY_LIMIT) {
+    attempts++;
+    console.log(`Side-Hide: Waiting for Spicetify (attempt ${attempts}/${maxAttempts})`);
     await new Promise(resolve => setTimeout(resolve, SH_DELAY_MS));
   }
-  await callback();
+  
+  if (attempts >= SH_RETRY_LIMIT) {
+    console.log("Side-Hide: Maximum attempts exceeded. Proceeding anyway...");
+  } else {
+    console.log("Side-Hide: Spicetify is ready.");
+  }
+  
+  // Store the observer to prevent garbage collection
+  window._sideHideObserver = await callback();
 };
 
-// Invoke side-hide once: 
-// - Spicetify.Platform has loaded the last API 
-// - the document is ready
-sh_main(() => Spicetify.Platform && Spicetify.Platform[SH_SPICETIFY_LAST_LOADED_API] && document.readyState === 'complete', hideSide);
-
+// Initialize when Spicetify is ready, checking for FeedbackAPI and complete document
+console.log("Side-Hide: Extension loaded, waiting for Spicetify to initialize...");
+sh_main(() => {
+  return Spicetify && 
+         Spicetify.Platform && 
+         Spicetify.Platform[SH_SPICETIFY_LAST_LOADED_API] && 
+         document.readyState === 'complete';
+}, hideSide);
