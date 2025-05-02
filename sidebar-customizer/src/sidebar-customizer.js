@@ -55,6 +55,16 @@
             SUBMENU_ITEM_CLASS: "main-contextMenu-menuItem",
             SUBMENU_BUTTON_CLASS: "main-contextMenu-menuItemButton",
             SUBMENU_CHECKBOX_CLASS: "sidebar-checkbox",
+        },
+        PLAYBAR: {
+            NOW_PLAYING_WIDGET: '[data-testid="now-playing-widget"]',
+            COVER_ART_CONTAINER: '[data-testid="CoverSlotCollapsed__container"]',
+            COVER_ART_BUTTON: '[data-testid="cover-art-button"]',
+            EXPAND_BUTTON: '.main-coverSlotCollapsed-expandButton',
+            WIDGET_CLASS: '.main-nowPlayingWidget-nowPlaying',
+            CONTAINER_CLASS: '.main-coverSlotCollapsed-container',
+            COVER_ART_CLASS: '.main-nowPlayingWidget-coverArt',
+            TRACK_INFO_CLASS: '.main-trackInfo-container'
         }
     };
 
@@ -122,22 +132,36 @@
                 
                 // NPV hiding styles
                 if (!prefs.nowPlaying) {
+                    // Only target VERY SPECIFIC elements rather than general classes that might affect album art
                     cssContent += `
-                        ${SELECTORS.NPV.ASIDE_SELECTOR}, 
-                        ${SELECTORS.NPV.ASIDE_SELECTOR_ALT}, 
-                        ${SELECTORS.NPV.WIDGET_SELECTOR}, 
-                        ${SELECTORS.NPV.CONTAINER_SELECTOR} {
+                        /* Target only the actual NPV panel/aside */
+                        ${SELECTORS.NPV.ASIDE_SELECTOR}:not(${SELECTORS.PLAYBAR.NOW_PLAYING_WIDGET}), 
+                        ${SELECTORS.NPV.ASIDE_SELECTOR_ALT}:not(${SELECTORS.PLAYBAR.NOW_PLAYING_WIDGET}) {
                             width: 0 !important;
                             height: 0 !important;
                             display: none !important;
                             visibility: hidden !important;
                             overflow: hidden !important;
                         }
-                        ${SELECTORS.NPV.BTN_SELECTOR}, 
-                        ${SELECTORS.NPV.BTN_SELECTOR_ALT}, 
-                        ${SELECTORS.NPV.BTN_RESTORE_FOCUS_SELECTOR} {
+                        
+                        /* Hide only the NPV buttons but not the widget itself */
+                        ${SELECTORS.NPV.BTN_SELECTOR}:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON}), 
+                        ${SELECTORS.NPV.BTN_SELECTOR_ALT}:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON}), 
+                        ${SELECTORS.NPV.BTN_RESTORE_FOCUS_SELECTOR}:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON}) {
                             display: none !important;
-                        }`;
+                        }
+                    `;
+                    
+                    // Ensure the expand button is visible and working
+                    cssContent += `
+                        /* Ensure the expand/collapse button is visible */
+                        ${SELECTORS.PLAYBAR.EXPAND_BUTTON} {
+                            display: flex !important;
+                            visibility: visible !important;
+                            opacity: 1 !important;
+                            cursor: pointer !important;
+                        }
+                    `;
                 }
                 
                 // Sidebar visibility
