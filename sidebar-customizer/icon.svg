@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <title>Sidebar Customizer Icon - Toggles in Sidebar</title>
+  
+  <!-- Main Outline -->
+  <rect x="3" y="3" width="18" height="18" rx="2" stroke="#B3B3B3" stroke-width="1.5"/>
+  
+  <!-- Right-hand dashed divider -->
+  <line x1="15" y1="3" x2="15" y2="21" stroke="#B3B3B3" stroke-width="1" stroke-dasharray="2 2"/>
+
+  <!-- Simplified Toggle Switches (Stacked in Right Sidebar Area: x=15 to x=21) -->
+  <!-- Toggle 1 (Top) - Disabled -->
+  <rect x="16" y="5" width="4" height="2" rx="1" fill="#535353"/> <!-- Track (Gray) -->
+  <circle cx="17" cy="6" r="1" fill="#FFFFFF"/> <!-- Handle (Left position) -->
+
+  <!-- Toggle 2 - Enabled -->
+  <rect x="16" y="9" width="4" height="2" rx="1" fill="#1DB954"/> <!-- Track (Spotify Green) -->
+  <circle cx="19" cy="10" r="1" fill="#FFFFFF"/> <!-- Handle (Right position) -->
+
+  <!-- Toggle 3 - Disabled -->
+  <rect x="16" y="13" width="4" height="2" rx="1" fill="#535353"/> <!-- Track (Gray) -->
+  <circle cx="17" cy="14" r="1" fill="#FFFFFF"/> <!-- Handle (Left position) -->
+  
+  <!-- Toggle 4 (Bottom) - Disabled -->
+  <rect x="16" y="17" width="4" height="2" rx="1" fill="#535353"/> <!-- Track (Gray) -->
+  <circle cx="17" cy="18" r="1" fill="#FFFFFF"/> <!-- Handle (Left position) -->
+
+</svg>

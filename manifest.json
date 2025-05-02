@@ -2,7 +2,7 @@
   {
     "name": "Private Session",
     "description": "Always start Spotify with Private Session active",
-    "main": "private-session/dist/private-session.5240426fe7403c4cf9cd.js",
+    "main": "private-session/dist/private-session.4d5cafc4a9146a2b8987.js",
     "preview": "private-session/icon.png",
     "readme": "private-session/README.md",
     "authors": [
@@ -84,6 +84,25 @@
       "focus",
       "ui",
       "minimalist"
+    ]
+  },
+  {
+    "name": "Sidebar Customizer",
+    "description": "Customize the visibility of right-hand sidebar elements (Friends, Queue, Connect, Now Playing).",
+    "main": "sidebar-customizer/dist/sidebar-customizer.7f181f14dd6357905e2b.js",
+    "preview": "sidebar-customizer/icon.png",
+    "readme": "sidebar-customizer/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "sidebar",
+      "ui",
+      "customization",
+      "annoyances"
     ]
   }
 ]

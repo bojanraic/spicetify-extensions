@@ -14,13 +14,15 @@ const PS_CSS_SELECTORS = {
   MAIN_MENU: "div.main-topBar-topbarContentRight > button.main-userWidget-box",
   MENU_ITEM_LABEL: "span",
   MENU_ITEM_BUTTON: "ul > li > button.main-contextMenu-menuItemButton[role='menuitemcheckbox']",
-  MENU_ITEM_CHECKED: "svg"
+  MENU_ITEM_CHECKED: "svg",
+  PROFILE_DROPDOWN_MENU: "ul.main-contextMenu-menu" // Added for observer
 };
+const PS_PERSISTENT_ITEM_ID = "ps-persistent-item"; // Unique ID for our item
 
 // State variables
 let persistentModeEnabled = false;
 let focusEventListener = null;
-let menuItemAdded = false; // Track if we've added our menu item
+let menuItemAdded = false; // Track if we've added our menu item to the CURRENTLY open menu
 let menuOperationInProgress = false;
 let lastMenuOperationTime = 0;
 let pendingFocusCheck = false; // Track if we have a pending focus check
@@ -355,32 +357,39 @@ function createCheckmark() {
 
 /**
  * Updates the state of our persistent privacy menu item if it exists in the DOM
+ * @param {Element} [menuItemElement] - Optional: The specific menu item element to update.
  */
-function updatePersistentMenuItemState() {
-  // Find our menu item if it exists
-  const menuItems = document.querySelectorAll("button.main-contextMenu-menuItemButton");
-  for (const button of menuItems) {
-    const span = button.querySelector("span");
-    if (span && span.textContent === PS_PERSISTENT_SESSION_LABEL_TEXT) {
-      console.debug("Private-Session: Found persistent privacy menu item, updating state");
-      
-      // Update aria-checked attribute
-      button.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
-      
-      // Update checkmark
-      const existingCheckmark = button.querySelector("svg");
-      if (persistentModeEnabled && !existingCheckmark) {
-        // Add our custom green checkmark
-        button.appendChild(createCheckmark());
-        console.debug("Private-Session: Added green checkmark");
-      } else if (!persistentModeEnabled && existingCheckmark) {
-        // Remove checkmark
-        existingCheckmark.remove();
-        console.debug("Private-Session: Removed checkmark");
-      }
-      
-      break;
+function updatePersistentMenuItemState(menuItemElement) {
+  let targetItem = menuItemElement;
+
+  // If no specific element provided, try to find it by ID (fallback)
+  if (!targetItem) {
+    const menuList = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
+    if (menuList) {
+        targetItem = menuList.querySelector(`#${PS_PERSISTENT_ITEM_ID}`);
     }
+  }
+
+  if (targetItem) {
+    const button = targetItem.querySelector("button");
+    if (button) {
+        console.debug("Private-Session: Updating persistent privacy item state");
+        
+        // Update aria-checked attribute
+        button.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
+        
+        // Update checkmark
+        const existingCheckmark = button.querySelector("svg");
+        if (persistentModeEnabled && !existingCheckmark) {
+            button.appendChild(createCheckmark());
+            console.debug("Private-Session: Added green checkmark");
+        } else if (!persistentModeEnabled && existingCheckmark) {
+            existingCheckmark.remove();
+            console.debug("Private-Session: Removed checkmark");
+        }
+    }
+  } else {
+      // console.warn("Private-Session: Could not find persistent menu item to update state.");
   }
 }
 
@@ -438,18 +447,19 @@ function addPersistentPrivacyItem(menuList) {
   
   if (!privateSessionSpan) {
     console.warn("Private-Session: Could not find Private session item to clone");
-    return;
+    return null; // Return null if cloning failed
   }
   
   const privateSessionItem = privateSessionSpan.closest("li");
   if (!privateSessionItem) {
     console.warn("Private-Session: Could not find Private session list item");
-    return;
+    return null; // Return null if cloning failed
   }
   
   // Clone the Private session menu item
   const menuItem = privateSessionItem.cloneNode(true);
-  
+  menuItem.id = PS_PERSISTENT_ITEM_ID; // Assign unique ID
+
   // Update the text content
   const span = menuItem.querySelector("span");
   if (span) {
@@ -478,15 +488,8 @@ function addPersistentPrivacyItem(menuList) {
     // Add our click handler
     newButton.addEventListener("click", () => {
       togglePersistentMode();
-      newButton.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
-      
-      // Update checkmark
-      const existingCheckmark = newButton.querySelector("svg");
-      if (persistentModeEnabled && !existingCheckmark) {
-        newButton.appendChild(createCheckmark());
-      } else if (!persistentModeEnabled && existingCheckmark) {
-        existingCheckmark.remove();
-      }
+      // Update the state visually immediately
+      updatePersistentMenuItemState(menuItem); 
     });
   }
   
@@ -495,109 +498,130 @@ function addPersistentPrivacyItem(menuList) {
   privateSessionItem.after(menuItem);
   
   console.debug("Private-Session: Successfully added our Persistent Privacy menu item");
+  return menuItem; // Return the added element
 }
 
 /**
- * Updates all menu items to reflect current state
+ * Ensures the persistent menu item exists and is up-to-date.
+ * Adds the item if it doesn't exist.
+ * @param {Element} menuList - The menu list element (ul.main-contextMenu-menu).
+ */
+function ensurePersistentMenuItem(menuList) {
+    if (!menuList) return;
+
+    let persistentItem = menuList.querySelector(`#${PS_PERSISTENT_ITEM_ID}`);
+    
+    if (persistentItem) {
+        // Item exists, just update its state
+        updatePersistentMenuItemState(persistentItem);
+    } else {
+        // Item doesn't exist, add it
+        persistentItem = addPersistentPrivacyItem(menuList);
+    }
+    
+    // If persistent mode is enabled, ensure private session is active
+    // Only do this check when the menu is interacted with to add/update our item
+    if (persistentModeEnabled && persistentItem) { // Check persistentItem exists
+        findPrivateSessionIndicator().then(indicator => {
+            if (!indicator) {
+                console.debug("Private-Session: Private session not active, enabling via current menu");
+                const privateSessionButton = findItemByText(menuList, PS_PRIVATE_SESSION_LABEL_TEXT);
+                if (privateSessionButton && !privateSessionButton.querySelector("svg")) {
+                    privateSessionButton.click();
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Updates all menu items to reflect current state - DEPRECATED for primary use
+ * Primarily used now for fallback or explicit refresh.
  */
 function updateMenuItems() {
-  const menuList = document.querySelector("ul.main-contextMenu-menu");
+  const menuList = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
   if (!menuList) {
-    console.warn("Private-Session: Menu not found when updating items");
+    // console.warn("Private-Session: Menu not found when updating items");
     return;
   }
   
-  // Find our persistent privacy item
-  const menuItems = Array.from(menuList.querySelectorAll("span"));
-  for (const item of menuItems) {
-    if (item.textContent === PS_PERSISTENT_SESSION_LABEL_TEXT) {
-      const button = item.closest("button");
-      if (button) {
-        console.debug(`Private-Session: Updating persistent privacy item, state: ${persistentModeEnabled}`);
-        
-        // Set the aria-checked attribute
-        button.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
-        
-        // Handle checkmark
-        const existingCheckmark = button.querySelector("svg");
-        
-        if (persistentModeEnabled) {
-          // We want a checkmark - if none exists, add one
-          if (!existingCheckmark) {
-            button.appendChild(createCheckmark());
-            console.debug("Private-Session: Added checkmark");
-          }
-        } else if (!persistentModeEnabled && existingCheckmark) {
-          // Remove checkmark if not needed
-          existingCheckmark.remove();
-          console.debug("Private-Session: Removed checkmark");
-        }
-      }
-      return;
-    }
+  // Find our persistent privacy item by ID and update it
+  const persistentItem = menuList.querySelector(`#${PS_PERSISTENT_ITEM_ID}`);
+  if (persistentItem) {
+      updatePersistentMenuItemState(persistentItem);
+  } else {
+      // Optional: Could add it here as a fallback, but observer should handle it
+      // console.warn("Private-Session: updateMenuItems called but item not found (should be added by observer).");
+      // addPersistentPrivacyItem(menuList); 
   }
-  
-  // If we get here, our item doesn't exist yet - add it
-  addPersistentPrivacyItem(menuList);
 }
 
 /**
- * Sets up a mutation observer to watch for menu opening
+ * Sets up a mutation observer to watch for menu opening/closing
  */
 function setupMenuObserver() {
   console.debug("Private-Session: Setting up menu observer");
   
-  // Create a mutation observer to watch for menu opening
   const observer = new MutationObserver((mutations) => {
-    // Skip if we're in a cooldown period
-    const now = Date.now();
-    if (now - lastMenuOperationTime < MENU_OPERATION_COOLDOWN) {
-      return;
-    }
-    
+    let menuAppeared = false;
+    let menuDisappeared = false;
+    let detectedMenuList = null;
+
     for (const mutation of mutations) {
-      if (mutation.addedNodes.length > 0) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeName === 'DIV' && node.querySelector && node.querySelector("ul.main-contextMenu-menu")) {
-            console.debug("Private-Session: Menu opened via DOM mutation");
-            
-            // Update timestamp to prevent other operations
-            lastMenuOperationTime = now;
-            
-            // Update our menu item with a slight delay
-            setTimeout(() => {
-              // If persistent mode is enabled, ensure private session is active
-              // But don't force open another menu, just update the current one
-              if (persistentModeEnabled) {
-                findPrivateSessionIndicator().then(indicator => {
-                  if (!indicator) {
-                    console.debug("Private-Session: Private session not active, enabling via current menu");
-                    const menuList = document.querySelector("ul.main-contextMenu-menu");
+        // Check for added nodes (Menu Appearance)
+        if (!menuItemAdded && mutation.addedNodes) {
+            for (const node of mutation.addedNodes) {
+                // Check if the node itself is the menu or contains it
+                if (node.nodeType === 1) {
+                     const menuList = node.matches?.(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU) 
+                                     ? node 
+                                     : node.querySelector?.(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
                     if (menuList) {
-                      const privateSessionButton = findItemByText(menuList, PS_PRIVATE_SESSION_LABEL_TEXT);
-                      if (privateSessionButton && !privateSessionButton.querySelector("svg")) {
-                        privateSessionButton.click();
-                      }
+                        // console.debug("Private-Session Observer: Detected menu appearance.");
+                        menuAppeared = true;
+                        detectedMenuList = menuList;
+                        break; 
                     }
-                  }
-                  
-                  // Update menu items after checking private session
-                  updateMenuItems();
-                });
-              } else {
-                // Just update menu items if persistent mode is disabled
-                updateMenuItems();
-              }
-            }, 150);
-            
-            return;
-          }
+                }
+            }
         }
-      }
+
+        // Check for removed nodes (Menu Disappearance)
+        if (menuItemAdded && mutation.removedNodes) {
+            for (const node of mutation.removedNodes) {
+                 if (node.nodeType === 1) {
+                    // Check if the removed node *is* the menu or *contains* our item
+                    const isMenu = node.matches?.(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
+                    const containsItem = node.querySelector?.(`#${PS_PERSISTENT_ITEM_ID}`); 
+                    if (isMenu || containsItem) {
+                         // console.debug("Private-Session Observer: Detected menu removal.");
+                        menuDisappeared = true;
+                        break;
+                    }
+                 }
+            }
+        }
+        if (menuAppeared || menuDisappeared) break; // Optimization
+    }
+
+    // Handle Menu Removal
+    if (menuDisappeared) {
+        // console.debug("Private-Session Observer: Resetting menuItemAdded flag.");
+        menuItemAdded = false;
+    }
+
+    // Handle Menu Appearance
+    if (menuAppeared && detectedMenuList && !menuItemAdded) {
+        // console.debug("Private-Session Observer: Ensuring persistent menu item.");
+        ensurePersistentMenuItem(detectedMenuList);
+        menuItemAdded = true; 
+        
+        // Update timestamp to prevent conflicting operations immediately after adding
+        lastMenuOperationTime = Date.now(); 
     }
   });
   
-  // Start observing the body for added nodes
+  // Start observing the body for added/removed nodes
   observer.observe(document.body, { childList: true, subtree: true });
 }
 

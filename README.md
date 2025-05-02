@@ -7,7 +7,7 @@ Private Session (PS) is a simple Spicetify extension that will always enable pri
 
 ## [Side-Hide](./side-hide/README.md)
 
-Side Hide (SH) is a simple Spicetify extension that hides the Spotify Now Playing and Friend Activity Views in the sidebar and associated buttons. Queue and Connect functionality is unchanged.
+Side Hide (SH) is a simple Spicetify extension that hides the Spotify Now Playing and Friend Activity Views in the sidebar and associated buttons. Queue and Connect functionality is unchanged. *(For more flexibility, see [SidebarCustomizer](#sidebarcustomizer) below)*
 
 ## [YT-Video](./yt-video/README.md)
 
@@ -21,3 +21,7 @@ Sesh-Stats is a Spicetify extension that tracks your listening statistics for th
 ## [Focus-Mode](./focus-mode/README.md)
 
 Focus-Mode is a Spicetify extension that creates a distraction-free listening experience by hiding everything except the album art. Shows player controls on mouse movement and exits with a click or Escape key. 
+
+## [SidebarCustomizer](./sidebar-customizer/README.md)
+
+Sidebar Customizer allows customizing the visibility of right-hand sidebar elements (Friend Activity, Queue, Connect, Now Playing View) via a profile menu toggle. **Recommended over Side-Hide** as it offers individual control of each sidebar element rather than an all-or-nothing approach. 
