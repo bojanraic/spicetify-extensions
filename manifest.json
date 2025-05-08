@@ -2,7 +2,7 @@
   {
     "name": "Private Session",
     "description": "Always start Spotify with Private Session active",
-    "main": "private-session/dist/private-session.4d5cafc4a9146a2b8987.js",
+    "main": "private-session/dist/private-session.2f946d1540a762cfb0b6.js",
     "preview": "private-session/icon.png",
     "readme": "private-session/README.md",
     "authors": [
@@ -89,7 +89,7 @@
   {
     "name": "Sidebar Customizer",
     "description": "Customize the visibility of right-hand sidebar elements (Friends, Queue, Connect, Now Playing).",
-    "main": "sidebar-customizer/dist/sidebar-customizer.23f399688b736b5c6671.js",
+    "main": "sidebar-customizer/dist/sidebar-customizer.5ae55cc20fb9f06a2d8e.js",
     "preview": "sidebar-customizer/icon.svg",
     "readme": "sidebar-customizer/README.md",
     "authors": [

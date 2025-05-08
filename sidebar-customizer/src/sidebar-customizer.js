@@ -110,6 +110,30 @@
                     `<svg viewBox="0 0 16 16" width="20" height="20" fill="#E22134"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm3.5 10.2l-1.3 1.3L8 9.3l-2.2 2.2-1.3-1.3L6.7 8 4.5 5.8l1.3-1.3L8 6.7l2.2-2.2 1.3 1.3L9.3 8l2.2 2.2z"></path></svg>`;
             },
             
+            createToggleSwitch(isEnabled) {
+                return `
+                    <div class="toggle-switch" style="
+                        position: relative;
+                        width: 40px;
+                        height: 20px;
+                        background-color: ${isEnabled ? '#1DB954' : '#535353'};
+                        border-radius: 10px;
+                        transition: background-color 0.3s;
+                    ">
+                        <div class="toggle-slider" style="
+                            position: absolute;
+                            top: 2px;
+                            left: ${isEnabled ? '22px' : '2px'};
+                            width: 16px;
+                            height: 16px;
+                            background-color: white;
+                            border-radius: 50%;
+                            transition: left 0.3s;
+                        "></div>
+                    </div>
+                `;
+            },
+            
             // Unified style manager
             createOrUpdateStyle() {
                 let styleTag = document.getElementById(CONFIG.STYLE_TAG_ID);
@@ -304,8 +328,9 @@
         
         const checkbox = document.createElement("span");
         checkbox.className = SELECTORS.PROFILE.SUBMENU_CHECKBOX_CLASS;
-        checkbox.style.cssText = "width:20px;height:20px;display:flex;align-items:center;justify-content:center;";
-        checkbox.innerHTML = utils.dom.getIconSvg(prefs[item.pref]);
+        checkbox.style.cssText = "width:40px;height:20px;display:flex;align-items:center;justify-content:center;";
+        checkbox.innerHTML = utils.dom.createToggleSwitch(prefs[item.pref]);
+        checkbox.title = prefs[item.pref] ? `Click to hide ${item.name}` : `Click to show ${item.name}`;
         
         menuItem.appendChild(label);
         menuItem.appendChild(checkbox);
@@ -318,7 +343,8 @@
             currentPrefs[item.pref] = !currentPrefs[item.pref];
             utils.prefs.save(currentPrefs);
             applyPreferences(currentPrefs);
-            checkbox.innerHTML = utils.dom.getIconSvg(currentPrefs[item.pref]);
+            checkbox.innerHTML = utils.dom.createToggleSwitch(currentPrefs[item.pref]);
+            checkbox.title = currentPrefs[item.pref] ? `Click to hide ${item.name}` : `Click to show ${item.name}`;
         });
         
         return menuItem;
@@ -332,7 +358,7 @@
                 existingMenu.querySelectorAll(`.${SELECTORS.PROFILE.SUBMENU_CHECKBOX_CLASS}`).forEach(checkbox => {
                     const menuItem = checkbox.closest("[data-pref]");
                     if (menuItem) {
-                        checkbox.innerHTML = utils.dom.getIconSvg(prefs[menuItem.dataset.pref]);
+                        checkbox.innerHTML = utils.dom.createToggleSwitch(prefs[menuItem.dataset.pref]);
                     }
                 });
                 return;

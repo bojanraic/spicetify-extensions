@@ -137,7 +137,8 @@ async function findPrivateSessionIndicator() {
  */
 function savePersistentModeSetting() {
   localStorage.setItem("private-session-persistent-mode", persistentModeEnabled.toString());
-  console.debug(`Private-Session: Saved persistent mode setting: ${persistentModeEnabled}`);
+  console.log(`Private-Session: Saved persistent mode setting to localStorage: ${persistentModeEnabled}`);
+  console.log(`Private-Session: Current localStorage value: ${localStorage.getItem("private-session-persistent-mode")}`);
 }
 
 /**
@@ -147,7 +148,8 @@ function loadPersistentModeSetting() {
   const savedSetting = localStorage.getItem("private-session-persistent-mode");
   // Default to false if no setting is found
   persistentModeEnabled = savedSetting === "true";
-  console.debug(`Private-Session: Loaded persistent mode setting: ${persistentModeEnabled}`);
+  console.log(`Private-Session: Loaded persistent mode setting from localStorage: ${persistentModeEnabled}`);
+  console.log(`Private-Session: Raw localStorage value: ${savedSetting}`);
 }
 
 /**
@@ -326,33 +328,32 @@ function enablePersistentMode() {
 }
 
 /**
- * Creates a simple green circle checkmark SVG element
- * @returns {Element} The checkmark element
+ * Creates a mobile-style toggle switch HTML
+ * @param {boolean} isEnabled - Whether the toggle is enabled
+ * @returns {string} The toggle switch HTML
  */
-function createCheckmark() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("height", "20");
-  svg.setAttribute("width", "20");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("viewBox", "0 0 20 20");
-  svg.style.marginLeft = "8px";
-  svg.style.verticalAlign = "middle";
-
-  const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  circle.setAttribute("cx", "10");
-  circle.setAttribute("cy", "10");
-  circle.setAttribute("r", "9");
-  circle.setAttribute("fill", "#1DB954");
-  
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", "M8.5 13.5l-3.5-3.5 1.5-1.5 2 2 4.5-4.5 1.5 1.5z");
-  path.setAttribute("fill", "#FFFFFF");
-  
-  svg.appendChild(circle);
-  svg.appendChild(path);
-  
-  return svg;
+function createToggleSwitch(isEnabled) {
+  return `
+    <div class="toggle-switch" style="
+      position: relative;
+      width: 40px;
+      height: 20px;
+      background-color: ${isEnabled ? '#1DB954' : '#535353'};
+      border-radius: 10px;
+      transition: background-color 0.3s;
+    ">
+      <div class="toggle-slider" style="
+        position: absolute;
+        top: 2px;
+        left: ${isEnabled ? '22px' : '2px'};
+        width: 16px;
+        height: 16px;
+        background-color: white;
+        border-radius: 50%;
+        transition: left 0.3s;
+      "></div>
+    </div>
+  `;
 }
 
 /**
@@ -375,18 +376,19 @@ function updatePersistentMenuItemState(menuItemElement) {
     if (button) {
         console.debug("Private-Session: Updating persistent privacy item state");
         
-        // Update aria-checked attribute
-        button.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
-        
-        // Update checkmark
-        const existingCheckmark = button.querySelector("svg");
-        if (persistentModeEnabled && !existingCheckmark) {
-            button.appendChild(createCheckmark());
-            console.debug("Private-Session: Added green checkmark");
-        } else if (!persistentModeEnabled && existingCheckmark) {
-            existingCheckmark.remove();
-            console.debug("Private-Session: Removed checkmark");
+        // Create a container for the toggle switch
+        let toggleContainer = button.querySelector('.sidebar-checkbox');
+        if (!toggleContainer) {
+            toggleContainer = document.createElement('span');
+            toggleContainer.className = 'sidebar-checkbox';
+            toggleContainer.style.cssText = "width:40px;height:20px;display:flex;align-items:center;justify-content:center;";
+            button.appendChild(toggleContainer);
         }
+        
+        // Update the toggle switch
+        toggleContainer.innerHTML = createToggleSwitch(persistentModeEnabled);
+        toggleContainer.title = persistentModeEnabled ? "Click to disable persistent privacy mode" : "Click to enable persistent privacy mode";
+        console.debug("Private-Session: Updated toggle switch to ", persistentModeEnabled ? "enabled" : "disabled");
     }
   } else {
       // console.warn("Private-Session: Could not find persistent menu item to update state.");
@@ -413,10 +415,18 @@ function disablePersistentMode() {
  * Toggles the persistent private session mode
  */
 function togglePersistentMode() {
+  console.log(`Private-Session: Toggle triggered - changing from ${persistentModeEnabled} to ${!persistentModeEnabled}`);
+  persistentModeEnabled = !persistentModeEnabled;
+  savePersistentModeSetting();
+  
+  // Log the value after toggling
+  console.log(`Private-Session: After toggle - persistentModeEnabled = ${persistentModeEnabled}`);
+  console.log(`Private-Session: After toggle - localStorage value = ${localStorage.getItem("private-session-persistent-mode")}`);
+  
   if (persistentModeEnabled) {
-    disablePersistentMode();
-  } else {
     enablePersistentMode();
+  } else {
+    disablePersistentMode();
   }
 }
 
@@ -441,64 +451,66 @@ function findItemByText(menuList, text) {
  * @param {Element} menuList - The menu list element
  */
 function addPersistentPrivacyItem(menuList) {
-  // Find the Private session item to clone
+  // Find the Private session item to get its position
   const privateSessionSpan = Array.from(menuList.querySelectorAll("span"))
     .find(span => span.textContent === PS_PRIVATE_SESSION_LABEL_TEXT);
   
   if (!privateSessionSpan) {
-    console.warn("Private-Session: Could not find Private session item to clone");
-    return null; // Return null if cloning failed
+    console.warn("Private-Session: Could not find Private session item");
+    return null;
   }
   
   const privateSessionItem = privateSessionSpan.closest("li");
   if (!privateSessionItem) {
     console.warn("Private-Session: Could not find Private session list item");
-    return null; // Return null if cloning failed
+    return null;
   }
   
-  // Clone the Private session menu item
-  const menuItem = privateSessionItem.cloneNode(true);
-  menuItem.id = PS_PERSISTENT_ITEM_ID; // Assign unique ID
+  // Create our own menu item as an <li> to match Spotify's structure
+  const menuItem = document.createElement("li");
+  menuItem.id = PS_PERSISTENT_ITEM_ID;
+  menuItem.className = privateSessionItem.className; // Copy the class for styling
 
-  // Update the text content
-  const span = menuItem.querySelector("span");
-  if (span) {
-    span.textContent = PS_PERSISTENT_SESSION_LABEL_TEXT;
-  }
+  // Create a button similar to Spotify's menu items but with a custom role
+  const button = document.createElement("div");
+  button.className = "main-contextMenu-menuItemButton";
+  button.style.cssText = "display:flex;align-items:center;padding:8px 12px;cursor:pointer;justify-content:space-between;";
+  // Use menuitem role instead of menuitemcheckbox to prevent Spotify's automatic behavior
+  button.setAttribute("role", "menuitem");
   
-  // Get the button element
-  const button = menuItem.querySelector("button");
-  if (button) {
-    // Set the initial state
-    button.setAttribute("aria-checked", persistentModeEnabled ? "true" : "false");
-    
-    // Remove any existing SVGs/checkmarks
-    const existingSvgs = button.querySelectorAll("svg");
-    existingSvgs.forEach(svg => svg.remove());
-    
-    // Add our checkmark if needed
-    if (persistentModeEnabled) {
-      button.appendChild(createCheckmark());
-    }
-    
-    // Replace the click handler
-    button.replaceWith(button.cloneNode(true));
-    const newButton = menuItem.querySelector("button");
-    
-    // Add our click handler
-    newButton.addEventListener("click", () => {
-      togglePersistentMode();
-      // Update the state visually immediately
-      updatePersistentMenuItemState(menuItem); 
-    });
-  }
+  // Create the label
+  const label = document.createElement("span");
+  label.textContent = PS_PERSISTENT_SESSION_LABEL_TEXT;
   
-  // Insert our item after the Private session item
-  console.debug("Private-Session: Inserting our cloned item after Spotify's Private session item");
+  // Create the toggle container
+  const toggle = document.createElement("span");
+  toggle.className = "sidebar-checkbox";
+  toggle.style.cssText = "width:40px;height:20px;display:flex;align-items:center;justify-content:center;";
+  toggle.innerHTML = createToggleSwitch(persistentModeEnabled);
+  toggle.title = persistentModeEnabled ? "Click to disable persistent privacy mode" : "Click to enable persistent privacy mode";
+  
+  // Add elements to the button
+  button.appendChild(label);
+  button.appendChild(toggle);
+  
+  // Add hover effects
+  button.addEventListener("mouseover", () => button.style.backgroundColor = "rgba(255,255,255,0.1)");
+  button.addEventListener("mouseout", () => button.style.backgroundColor = "transparent");
+  
+  // Add click handler
+  button.addEventListener("click", () => {
+    togglePersistentMode();
+    toggle.innerHTML = createToggleSwitch(persistentModeEnabled);
+    toggle.title = persistentModeEnabled ? "Click to disable persistent privacy mode" : "Click to enable persistent privacy mode";
+  });
+  
+  // Add the button to the menu item
+  menuItem.appendChild(button);
+
+  // Insert after the Private session item
   privateSessionItem.after(menuItem);
-  
-  console.debug("Private-Session: Successfully added our Persistent Privacy menu item");
-  return menuItem; // Return the added element
+
+  return menuItem;
 }
 
 /**
@@ -526,7 +538,9 @@ function ensurePersistentMenuItem(menuList) {
             if (!indicator) {
                 console.debug("Private-Session: Private session not active, enabling via current menu");
                 const privateSessionButton = findItemByText(menuList, PS_PRIVATE_SESSION_LABEL_TEXT);
-                if (privateSessionButton && !privateSessionButton.querySelector("svg")) {
+                // Check if the private session is active by checking for the indicator directly
+                // rather than looking for SVG elements in the menu
+                if (privateSessionButton && !indicator) {
                     privateSessionButton.click();
                 }
             }
@@ -541,7 +555,7 @@ function ensurePersistentMenuItem(menuList) {
 function updateMenuItems() {
   const menuList = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
   if (!menuList) {
-    // console.warn("Private-Session: Menu not found when updating items");
+    console.warn("Private-Session: Menu not found when updating items");
     return;
   }
   
@@ -551,8 +565,8 @@ function updateMenuItems() {
       updatePersistentMenuItemState(persistentItem);
   } else {
       // Optional: Could add it here as a fallback, but observer should handle it
-      // console.warn("Private-Session: updateMenuItems called but item not found (should be added by observer).");
-      // addPersistentPrivacyItem(menuList); 
+      console.warn("Private-Session: updateMenuItems called but item not found (should be added by observer).");
+      //addPersistentPrivacyItem(menuList); 
   }
 }
 
