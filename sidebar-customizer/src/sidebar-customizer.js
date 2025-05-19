@@ -406,7 +406,9 @@
     // --- Event Handlers & Observers ---
     function setupEventListeners() {
         // Single observer for NPV and menu
+        console.log('[SidebarCustomizer] Setting up mutation observer');
         const observer = new MutationObserver(mutations => {
+            console.log('[SidebarCustomizer] Mutation observer callback fired', mutations);
             const prefs = utils.prefs.load();
             
             // Check if NPV appeared and should be hidden
@@ -436,9 +438,20 @@
             // Check for profile menu opening
             const profileMenu = document.querySelector(SELECTORS.PROFILE.DROPDOWN_MENU);
             if (profileMenu) {
-                const hasCustomMenu = profileMenu.querySelector(`#${SELECTORS.PROFILE.SUBMENU_ID}`);
-                if (!hasCustomMenu) {
-                    addCustomSubMenu(profileMenu, prefs);
+                console.log('[SidebarCustomizer] Found a menu:', profileMenu);
+                // Only add submenu if this is the profile menu (check for 'Settings' item)
+                const menuItems = Array.from(profileMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'));
+                console.log('[SidebarCustomizer] Menu items:', menuItems.map(item => item.textContent?.trim()));
+                const hasSettings = menuItems.some(item => item.textContent?.trim() === 'Settings');
+                console.log('[SidebarCustomizer] Has Settings:', hasSettings);
+                if (hasSettings) {
+                    const hasCustomMenu = profileMenu.querySelector(`#${SELECTORS.PROFILE.SUBMENU_ID}`);
+                    if (!hasCustomMenu) {
+                        console.log('[SidebarCustomizer] Injecting custom submenu');
+                        addCustomSubMenu(profileMenu, prefs);
+                    } else {
+                        console.log('[SidebarCustomizer] Custom submenu already present');
+                    }
                 }
             }
         });
@@ -449,6 +462,7 @@
             attributes: true,
             attributeFilter: ['style', 'class', 'aria-label']
         });
+        console.log('[SidebarCustomizer] Mutation observer is now observing');
         
         // Setup profile menu button listener
         utils.dom.getElement(SELECTORS.PROFILE.BUTTON).then(button => {
@@ -487,6 +501,7 @@
     // --- Initialization ---
     async function init() {
         try {
+            console.log('[SidebarCustomizer] init() called');
             // Wait for Spicetify
             let attempts = 0;
             while (!(window.Spicetify && Spicetify.Platform && Spicetify.Platform.History) && 
