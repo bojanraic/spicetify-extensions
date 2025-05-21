@@ -14,6 +14,6 @@
     "deploy": "npm run copy && spicetify config extensions private-session.js && spicetify apply && spicetify enable-devtools",
     "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions private-session.js && spicetify apply",
     "local": "npm run clean && npm run build && npm run deploy",
-    "undeploy-local": "rm -rf `spicetify path userdata`/Extensions/private-session.js && spicetify config extensions private-session.js- && spicetify apply"
+    "undeploy": "rm -rf `spicetify path userdata`/Extensions/private-session.js && spicetify config extensions private-session.js- && spicetify apply"
   }
 }

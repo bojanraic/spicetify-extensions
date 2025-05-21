@@ -450,19 +450,27 @@ function findItemByText(menuList, text) {
  * Adds the persistent privacy item to the menu
  * @param {Element} menuList - The menu list element
  */
-function addPersistentPrivacyItem(menuList) {
+function addPersistentPrivacyItem(menuList, retryCount = 0) {
+  const MAX_RETRIES = 10;
+  const RETRY_DELAY = 100;
+
   // Find the Private session item to get its position
   const privateSessionSpan = Array.from(menuList.querySelectorAll("span"))
     .find(span => span.textContent === PS_PRIVATE_SESSION_LABEL_TEXT);
-  
+
   if (!privateSessionSpan) {
-    console.warn("Private-Session: Could not find Private session item");
+    if (retryCount < MAX_RETRIES) {
+      setTimeout(() => addPersistentPrivacyItem(menuList, retryCount + 1), RETRY_DELAY);
+      console.log(`[Private-Session] Private session item not found, retrying (${retryCount + 1})`);
+    } else {
+      console.warn("[Private-Session] Could not find Private session item after retries");
+    }
     return null;
   }
-  
+
   const privateSessionItem = privateSessionSpan.closest("li");
   if (!privateSessionItem) {
-    console.warn("Private-Session: Could not find Private session list item");
+    console.warn("[Private-Session] Could not find Private session list item");
     return null;
   }
   
@@ -510,6 +518,7 @@ function addPersistentPrivacyItem(menuList) {
   // Insert after the Private session item
   privateSessionItem.after(menuItem);
 
+  console.log("[Private-Session] Added persistent privacy item after Private session");
   return menuItem;
 }
 
@@ -574,7 +583,7 @@ function updateMenuItems() {
  * Sets up a mutation observer to watch for menu opening/closing
  */
 function setupMenuObserver() {
-  console.debug("Private-Session: Setting up menu observer");
+  console.log("[Private-Session] Setting up menu observer");
   
   const observer = new MutationObserver((mutations) => {
     let menuAppeared = false;
@@ -591,7 +600,7 @@ function setupMenuObserver() {
                                      ? node 
                                      : node.querySelector?.(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
                     if (menuList) {
-                        // console.debug("Private-Session Observer: Detected menu appearance.");
+                        console.log("[Private-Session] Detected menu appearance");
                         menuAppeared = true;
                         detectedMenuList = menuList;
                         break; 
@@ -608,7 +617,7 @@ function setupMenuObserver() {
                     const isMenu = node.matches?.(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
                     const containsItem = node.querySelector?.(`#${PS_PERSISTENT_ITEM_ID}`); 
                     if (isMenu || containsItem) {
-                         // console.debug("Private-Session Observer: Detected menu removal.");
+                         console.log("[Private-Session] Detected menu removal");
                         menuDisappeared = true;
                         break;
                     }
@@ -620,23 +629,36 @@ function setupMenuObserver() {
 
     // Handle Menu Removal
     if (menuDisappeared) {
-        // console.debug("Private-Session Observer: Resetting menuItemAdded flag.");
+        console.log("[Private-Session] Resetting menuItemAdded flag");
         menuItemAdded = false;
     }
 
     // Handle Menu Appearance
     if (menuAppeared && detectedMenuList && !menuItemAdded) {
-        // console.debug("Private-Session Observer: Ensuring persistent menu item.");
-        ensurePersistentMenuItem(detectedMenuList);
-        menuItemAdded = true; 
-        
-        // Update timestamp to prevent conflicting operations immediately after adding
-        lastMenuOperationTime = Date.now(); 
+        // Only add if the anchor is present
+        const privateSessionSpan = Array.from(detectedMenuList.querySelectorAll("span"))
+          .find(span => span.textContent === PS_PRIVATE_SESSION_LABEL_TEXT);
+        if (privateSessionSpan) {
+            console.log("[Private-Session] Ensuring persistent menu item (anchor found)");
+            ensurePersistentMenuItem(detectedMenuList);
+            menuItemAdded = true; 
+            lastMenuOperationTime = Date.now(); 
+        } else {
+            // Retry after a short delay
+            setTimeout(() => {
+                if (!menuItemAdded) {
+                    console.log("[Private-Session] Anchor not found, retrying observer logic");
+                    observer.disconnect();
+                    setupMenuObserver();
+                }
+            }, 100);
+        }
     }
   });
   
   // Start observing the body for added/removed nodes
   observer.observe(document.body, { childList: true, subtree: true });
+  console.log("[Private-Session] Mutation observer is now observing");
 }
 
 /**
