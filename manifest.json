@@ -2,7 +2,7 @@
   {
     "name": "Private Session",
     "description": "Always start Spotify with Private Session active",
-    "main": "private-session/dist/private-session.2940840857ebeda15515.js",
+    "main": "private-session/dist/private-session.6141336815dbde99546b.js",
     "preview": "private-session/icon.png",
     "readme": "private-session/README.md",
     "authors": [

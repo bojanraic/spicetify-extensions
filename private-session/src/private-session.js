@@ -530,6 +530,13 @@ function addPersistentPrivacyItem(menuList, retryCount = 0) {
 function ensurePersistentMenuItem(menuList) {
     if (!menuList) return;
 
+    // First check if this is a profile menu by looking for Private session item
+    const privateSessionButton = findItemByText(menuList, PS_PRIVATE_SESSION_LABEL_TEXT);
+    if (!privateSessionButton) {
+        console.log("[Private-Session] This is not a profile menu (no Private session item)");
+        return;
+    }
+
     let persistentItem = menuList.querySelector(`#${PS_PERSISTENT_ITEM_ID}`);
     
     if (persistentItem) {
@@ -635,23 +642,28 @@ function setupMenuObserver() {
 
     // Handle Menu Appearance
     if (menuAppeared && detectedMenuList && !menuItemAdded) {
-        // Only add if the anchor is present
+        // Check if this is the profile menu by looking for "Private session" item
+        // We only want to add our item to the profile menu, not to context menus
         const privateSessionSpan = Array.from(detectedMenuList.querySelectorAll("span"))
           .find(span => span.textContent === PS_PRIVATE_SESSION_LABEL_TEXT);
-        if (privateSessionSpan) {
-            console.log("[Private-Session] Ensuring persistent menu item (anchor found)");
-            ensurePersistentMenuItem(detectedMenuList);
-            menuItemAdded = true; 
-            lastMenuOperationTime = Date.now(); 
+        
+        // Also check for Settings menu item which only appears in profile menu
+        const hasSettingsItem = Array.from(detectedMenuList.querySelectorAll("span"))
+          .some(span => span.textContent === "Settings");
+            
+        if (privateSessionSpan || hasSettingsItem) {
+            console.log("[Private-Session] Profile menu detected (anchor or Settings found)");
+            // This is the profile menu (not a context menu), now check for Private session item
+            if (privateSessionSpan) {
+                console.log("[Private-Session] Ensuring persistent menu item (anchor found)");
+                ensurePersistentMenuItem(detectedMenuList);
+                menuItemAdded = true;
+                lastMenuOperationTime = Date.now();
+            } else {
+                console.log("[Private-Session] Profile menu found but no Private session item");
+            }
         } else {
-            // Retry after a short delay
-            setTimeout(() => {
-                if (!menuItemAdded) {
-                    console.log("[Private-Session] Anchor not found, retrying observer logic");
-                    observer.disconnect();
-                    setupMenuObserver();
-                }
-            }, 100);
+            console.log("[Private-Session] This appears to be a context menu, not adding our item");
         }
     }
   });
