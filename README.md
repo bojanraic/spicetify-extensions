@@ -25,3 +25,7 @@ Focus-Mode is a Spicetify extension that creates a distraction-free listening ex
 ## [SidebarCustomizer](./sidebar-customizer/README.md)
 
 Sidebar Customizer allows customizing the visibility of right-hand sidebar elements (Friend Activity, Queue, Connect, Now Playing View) via a profile menu toggle. **Recommended over Side-Hide** as it offers individual control of each sidebar element rather than an all-or-nothing approach. 
+
+## [Pinned Sidebar Panel](./pinned-sidebar-panel/README.md)
+
+Pinned Sidebar Panel (PSP) automatically restores your chosen right-hand sidebar panel (e.g., Friend Activity, Queue) after a configurable timeout if another panel (like the Queue or Connect to a device modal) temporarily takes its place or is closed. 

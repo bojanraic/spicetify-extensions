@@ -1,0 +1,37 @@
+{
+  "name": "pinned-sidebar-panel",
+  "version": "1.0.0",
+  "description": "Spicetify extension to auto-restore a chosen sidebar panel.",
+  "main": "src/pinned-sidebar-panel.js",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "watch": "webpack --watch --config webpack.config.js",
+    "clean": "rm -rf ./dist",
+    "copy": "cp src/pinned-sidebar-panel.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/pinned-sidebar-panel.*.js `spicetify path userdata`/Extensions/pinned-sidebar-panel.js",
+    "deploy": "npm run copy && spicetify config extensions pinned-sidebar-panel.js && spicetify apply",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions pinned-sidebar-panel.js && spicetify apply",
+    "local": "npm run clean && npm run build && npm run deploy-dist",
+    "undeploy": "rm -f `spicetify path userdata`/Extensions/pinned-sidebar-panel.js && spicetify config extensions pinned-sidebar-panel.js- && spicetify apply"
+  },
+  "keywords": [
+    "spicetify",
+    "extension",
+    "spotify",
+    "sidebar",
+    "panel",
+    "auto-restore",
+    "pinned"
+  ],
+  "author": "Bojan Raic",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/core": "^7.24.9",
+    "@babel/preset-env": "^7.24.8",
+    "babel-loader": "^9.1.3",
+    "clean-webpack-plugin": "^4.0.0",
+    "webpack": "^5.70.0",
+    "webpack-cli": "^4.9.2",
+    "webpack-manifest-plugin": "^5.0.1"
+  }
+}

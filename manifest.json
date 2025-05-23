@@ -104,5 +104,24 @@
       "customization",
       "annoyances"
     ]
+  },
+  {
+    "name": "Pinned Sidebar Panel",
+    "description": "Automatically restores a chosen sidebar panel after a timeout.",
+    "main": "pinned-sidebar-panel/dist/pinned-sidebar-panel.c2afe18b358b651c0079.js",
+    "preview": "pinned-sidebar-panel/icon.svg",
+    "readme": "pinned-sidebar-panel/README.md",
+    "authors": [
+      {
+        "name": "Bojan Raic",
+        "url": "https://github.com/BojanRaic"
+      }
+    ],
+    "tags": [
+      "sidebar",
+      "ui",
+      "customization",
+      "automation"
+    ]
   }
 ]
