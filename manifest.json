@@ -89,7 +89,7 @@
   {
     "name": "Sidebar Customizer",
     "description": "Customize the visibility of right-hand sidebar elements (Friends, Queue, Connect, Now Playing).",
-    "main": "sidebar-customizer/dist/sidebar-customizer.1843fcaa61e0d4246af2.js",
+    "main": "sidebar-customizer/dist/sidebar-customizer.dd9e92e32219724a69c9.js",
     "preview": "sidebar-customizer/icon.svg",
     "readme": "sidebar-customizer/README.md",
     "authors": [

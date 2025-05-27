@@ -174,9 +174,14 @@
                         ${SELECTORS.NPV.BTN_RESTORE_FOCUS_SELECTOR}:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON}) {
                             display: none !important;
                         }
+
+                        /* Hide the cover art expand button */
+                        ${SELECTORS.PLAYBAR.EXPAND_BUTTON} {
+                            display: none !important;
+                        }
                     `;
-                    
-                    // Ensure the expand button is visible and working
+                } else {
+                    // Ensure the expand button is visible and working when NPV is on
                     cssContent += `
                         /* Ensure the expand/collapse button is visible */
                         ${SELECTORS.PLAYBAR.EXPAND_BUTTON} {
