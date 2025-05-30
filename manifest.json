@@ -35,7 +35,7 @@
   {
     "name": "YT Video",
     "description": "Search and watch YouTube videos for Spotify songs without ads, cookies, or tracking",
-    "main": "yt-video/dist/yt-video.e4314fca1abeffbf25aa.js",
+    "main": "yt-video/dist/yt-video.eaa40185139693cc8f8e.js",
     "preview": "yt-video/icon.png",
     "readme": "yt-video/README.md",
     "authors": [
@@ -89,7 +89,7 @@
   {
     "name": "Sidebar Customizer",
     "description": "Customize the visibility of right-hand sidebar elements (Friends, Queue, Connect, Now Playing).",
-    "main": "sidebar-customizer/dist/sidebar-customizer.dd9e92e32219724a69c9.js",
+    "main": "sidebar-customizer/dist/sidebar-customizer.24c1cad55f167720a585.js",
     "preview": "sidebar-customizer/icon.svg",
     "readme": "sidebar-customizer/README.md",
     "authors": [

@@ -21,6 +21,7 @@ const YTV_NOCOOKIE_DOMAIN = "www.youtube-nocookie.com";
 const YTV_BUTTON_COLOR = "#FF0000"; // YouTube red color
 const YTV_SETTINGS_KEY = "yt-video:settings";
 const YTV_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Spicetify loads
+const YTV_MUSIC_VIDEO_SEARCH_SUFFIX = "music video";
 
 // Cache constants
 const YTV_CACHE_KEY_PREFIX = "yt-video:cache:";
@@ -466,9 +467,9 @@ function openYouTubeVideoForTrack(trackInfo) {
   
   // Continue with normal search if no cache hit
   if (trackInfo.name && trackInfo.artist) {
-    searchQuery = `${trackInfo.artist} - ${trackInfo.name} official video`;
+    searchQuery = `${trackInfo.artist} - ${trackInfo.name} ${YTV_MUSIC_VIDEO_SEARCH_SUFFIX}`;
   } else if (!trackInfo.name && trackInfo.artist) {
-    searchQuery = `${trackInfo.artist} official video`;
+    searchQuery = `${trackInfo.artist} ${YTV_MUSIC_VIDEO_SEARCH_SUFFIX}`;
   } else if (trackInfo.name && !trackInfo.artist) {
     searchQuery = `${trackInfo.name} full album`;
   } else {

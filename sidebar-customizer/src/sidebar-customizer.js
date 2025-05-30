@@ -179,6 +179,15 @@
                         ${SELECTORS.PLAYBAR.EXPAND_BUTTON} {
                             display: none !important;
                         }
+
+                        /* Disable click events on cover art elements */
+                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
+                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
+                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
+                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
+                            pointer-events: none !important;
+                            cursor: default !important;
+                        }
                     `;
                 } else {
                     // Ensure the expand button is visible and working when NPV is on
@@ -188,6 +197,15 @@
                             display: flex !important;
                             visibility: visible !important;
                             opacity: 1 !important;
+                            cursor: pointer !important;
+                        }
+
+                        /* Re-enable click events on cover art elements */
+                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
+                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
+                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
+                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
+                            pointer-events: auto !important;
                             cursor: pointer !important;
                         }
                     `;
