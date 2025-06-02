@@ -1,0 +1,77 @@
+name: Invalidate jsDelivr Cache for Changed Dist Files
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/dist/**'
+  workflow_dispatch:
+
+jobs:
+  invalidate-cache:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Fetch current and previous commit to compare changes
+    
+    - name: Get changed dist files
+      id: changed-files
+      run: |
+        # Get list of changed files in dist directories
+        changed_files=$(git diff --name-only HEAD~1 HEAD | grep -E '^[^/]+/dist/.*\.js$' || true)
+        
+        if [ -z "$changed_files" ]; then
+          echo "No dist files changed"
+          echo "files=" >> $GITHUB_OUTPUT
+          echo "urls=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Changed dist files:"
+        echo "$changed_files"
+        
+        # Convert to jsDelivr URLs
+        urls=""
+        for file in $changed_files; do
+          jsdelivr_url="https://cdn.jsdelivr.net/gh/${{ github.repository }}@main/$file"
+          if [ -z "$urls" ]; then
+            urls="$jsdelivr_url"
+          else
+            urls="$urls,$jsdelivr_url"
+          fi
+        done
+        
+        echo "jsDelivr URLs to invalidate:"
+        echo "$urls"
+        
+        # Convert to space-separated list for summary
+        files_list=$(echo "$changed_files" | tr '\n' ' ')
+        echo "files=$files_list" >> $GITHUB_OUTPUT
+        echo "urls=$urls" >> $GITHUB_OUTPUT
+    
+    - name: Invalidate jsDelivr cache
+      if: steps.changed-files.outputs.urls != ''
+      uses: egad13/purge-jsdelivr-cache@v1
+      with:
+        url: ${{ steps.changed-files.outputs.urls }}
+        attempts: 3
+    
+    - name: Summary
+      if: steps.changed-files.outputs.files != ''
+      run: |
+        files="${{ steps.changed-files.outputs.files }}"
+        file_count=$(echo "$files" | wc -w)
+        
+        echo "## Cache Invalidation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "Processed $file_count changed dist file(s):" >> $GITHUB_STEP_SUMMARY
+        
+        for file in $files; do
+          jsdelivr_url="https://cdn.jsdelivr.net/gh/${{ github.repository }}@main/$file"
+          echo "- [$file]($jsdelivr_url)" >> $GITHUB_STEP_SUMMARY
+        done
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Cache invalidation requests have been sent to jsDelivr using the purge-jsdelivr-cache action." >> $GITHUB_STEP_SUMMARY 
