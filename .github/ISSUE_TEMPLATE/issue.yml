@@ -37,6 +37,8 @@ body:
         - YT-video
         - sesh-stats
         - focus-mode
+        - sidebar-customizer
+        - pinned-sidebar-panel
     validations:
       required: false
   - type: textarea
