@@ -21,7 +21,7 @@ jobs:
       id: changed-files
       run: |
         # Get list of changed files in dist directories
-        changed_files=$(git diff --name-only HEAD~1 HEAD | grep -E '^[^/]+/dist/.*\.js$' || true)
+        changed_files=$(git diff --name-only HEAD~1 HEAD | grep -E '/dist/.*\.js$' || true)
         
         if [ -z "$changed_files" ]; then
           echo "No dist files changed"
@@ -53,11 +53,13 @@ jobs:
         echo "urls=$urls" >> $GITHUB_OUTPUT
     
     - name: Invalidate jsDelivr cache
+      id: invalidate-cache
       if: steps.changed-files.outputs.urls != ''
       uses: egad13/purge-jsdelivr-cache@v1
       with:
         url: ${{ steps.changed-files.outputs.urls }}
         attempts: 3
+      continue-on-error: true
     
     - name: Summary
       if: steps.changed-files.outputs.files != ''
@@ -74,4 +76,9 @@ jobs:
         done
         
         echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.invalidate-cache.outcome }}" == "success" ]; then
+          echo "✅ Cache invalidation completed successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Cache invalidation completed with warnings" >> $GITHUB_STEP_SUMMARY
+        fi
         echo "Cache invalidation requests have been sent to jsDelivr using the purge-jsdelivr-cache action." >> $GITHUB_STEP_SUMMARY 
