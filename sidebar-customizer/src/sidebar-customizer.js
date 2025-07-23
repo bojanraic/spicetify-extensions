@@ -13,6 +13,7 @@
             queue: false,
             connect: false,
             nowPlaying: false,
+            albumArtHandler: false,
         }
     };
     
@@ -179,15 +180,6 @@
                         ${SELECTORS.PLAYBAR.EXPAND_BUTTON} {
                             display: none !important;
                         }
-
-                        /* Disable click events on cover art elements */
-                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
-                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
-                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
-                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
-                            pointer-events: none !important;
-                            cursor: default !important;
-                        }
                     `;
                 } else {
                     // Ensure the expand button is visible and working when NPV is on
@@ -199,7 +191,23 @@
                             opacity: 1 !important;
                             cursor: pointer !important;
                         }
+                    `;
+                }
 
+                // Handle album art click events separately
+                if (!prefs.albumArtHandler) {
+                    cssContent += `
+                        /* Disable click events on cover art elements */
+                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
+                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
+                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
+                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
+                            pointer-events: none !important;
+                            cursor: default !important;
+                        }
+                    `;
+                } else {
+                    cssContent += `
                         /* Re-enable click events on cover art elements */
                         ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
                         ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
@@ -401,7 +409,8 @@
                 { name: SELECTORS.FRIEND_ACTIVITY.LABEL, pref: "friendActivity" },
                 { name: SELECTORS.QUEUE.LABEL, pref: "queue" },
                 { name: SELECTORS.CONNECT.LABEL, pref: "connect" },
-                { name: SELECTORS.NPV.TEXT_LABEL_ALT, pref: "nowPlaying" }
+                { name: SELECTORS.NPV.TEXT_LABEL_ALT, pref: "nowPlaying" },
+                { name: "Album Art Handler", pref: "albumArtHandler" }
             ];
             
             items.forEach(item => submenuContainer.appendChild(createMenuItem(item, prefs)));
