@@ -38,6 +38,7 @@ const YTV_DEFAULT_SETTINGS = {
 
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
+let ytvContextMenuRegistered = false;
 
 // Declare performSearch, showApiResults, and showEmbedResults globally so they can be accessed by showVideoPlayer
 let performSearch;
@@ -831,13 +832,18 @@ function getCurrentTrackInfo() {
  */
 async function getTrackInfoFromURI(uri) {
   console.debug("YT-Video: Getting track info from URI:", uri);
-  
+
   try {
     if (uri.includes("spotify:track:")) {
       // It's a track URI
       const trackId = uri.split("spotify:track:")[1];
+      if (!trackId) {
+        console.error("YT-Video: Could not extract track ID from URI:", uri);
+        return null;
+      }
+
       const trackInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${trackId}`);
-      
+
       if (trackInfo && trackInfo.name) {
         console.debug("YT-Video: Found track info from track URI");
         return {
@@ -845,12 +851,19 @@ async function getTrackInfoFromURI(uri) {
           artist: trackInfo.artists?.[0]?.name || "",
           album: trackInfo.album?.name || ""
         };
+      } else {
+        console.error("YT-Video: Track API response missing expected fields:", trackInfo);
       }
     } else if (uri.includes("spotify:album:")) {
       // It's an album URI
       const albumId = uri.split("spotify:album:")[1];
+      if (!albumId) {
+        console.error("YT-Video: Could not extract album ID from URI:", uri);
+        return null;
+      }
+
       const albumInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${albumId}`);
-      
+
       if (albumInfo && albumInfo.name) {
         console.debug("YT-Video: Found album info from album URI");
         return {
@@ -858,12 +871,19 @@ async function getTrackInfoFromURI(uri) {
           artist: albumInfo.artists?.[0]?.name || "",
           album: albumInfo.name
         };
+      } else {
+        console.error("YT-Video: Album API response missing expected fields:", albumInfo);
       }
     } else if (uri.includes("spotify:artist:")) {
       // It's an artist URI
       const artistId = uri.split("spotify:artist:")[1];
+      if (!artistId) {
+        console.error("YT-Video: Could not extract artist ID from URI:", uri);
+        return null;
+      }
+
       const artistInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists/${artistId}`);
-      
+
       if (artistInfo && artistInfo.name) {
         console.debug("YT-Video: Found artist info from artist URI");
         return {
@@ -871,10 +891,12 @@ async function getTrackInfoFromURI(uri) {
           artist: artistInfo.name,
           album: ""
         };
+      } else {
+        console.error("YT-Video: Artist API response missing expected fields:", artistInfo);
       }
     }
-    
-    console.error("YT-Video: Could not get track info from URI:", uri);
+
+    console.error("YT-Video: Could not get track info from URI (unknown format):", uri);
     return null;
   } catch (error) {
     console.error("YT-Video: Error getting track info from URI:", error);
@@ -1623,6 +1645,12 @@ async function addYouTubeButton() {
  * Adds context menu items for YouTube search
  */
 function addContextMenuItems() {
+  // Prevent duplicate registrations
+  if (ytvContextMenuRegistered) {
+    console.debug("YT-Video: Context menu items already registered, skipping");
+    return;
+  }
+
   if (!Spicetify.ContextMenu) {
     console.error("YT-Video: Spicetify.ContextMenu is not available");
     return;
@@ -1636,30 +1664,36 @@ function addContextMenuItems() {
         console.error("YT-Video: No URIs provided to context menu handler");
         return;
       }
-      
+
       // Pause the song if it's playing
       if (Spicetify.Player.isPlaying()) {
         console.debug("YT-Video: Pausing playback");
         Spicetify.Player.pause();
       }
-      
+
       // Get the first URI (we only handle one at a time)
       const uri = uris[0];
       console.debug("YT-Video: Context menu item clicked for URI:", uri);
-      
+
       // Get track info from URI
-      const trackInfo = await getTrackInfoFromURI(uri);
-      
+      let trackInfo = await getTrackInfoFromURI(uri);
+
+      // Fallback to current track info if URI lookup failed
+      if (!trackInfo) {
+        console.debug("YT-Video: URI lookup failed, falling back to current track info");
+        trackInfo = getCurrentTrackInfo();
+      }
+
       // Open YouTube video for the track
       openYouTubeVideoForTrack(trackInfo);
     },
     (uris) => {
       // Only show for tracks, albums, and artists
       if (!uris || !uris.length) return false;
-      
+
       const uri = uris[0];
-      return uri.includes("spotify:track:") || 
-             uri.includes("spotify:album:") || 
+      return uri.includes("spotify:track:") ||
+             uri.includes("spotify:album:") ||
              uri.includes("spotify:artist:");
     },
     YTV_CONTEXT_MENU_ICON
@@ -1667,7 +1701,10 @@ function addContextMenuItems() {
   
   // Register the context menu item
   watchOnYouTubeItem.register();
-  
+
+  // Mark as registered to prevent duplicates
+  ytvContextMenuRegistered = true;
+
   console.debug("YT-Video: Added context menu items");
 }
 
