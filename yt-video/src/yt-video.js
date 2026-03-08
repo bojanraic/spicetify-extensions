@@ -44,81 +44,7 @@ const YTV_DEFAULT_SETTINGS = {
 
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
-const ytvRateLimitedUntilByUri = new Map();
-let ytvLastContextMenuActionAt = 0;
-let ytvLastContextTrackInfo = null;
-
-function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
-  Spicetify.showNotification(message, false, durationMs);
-}
-
-function parseTrackInfoFromLabel(label, marker) {
-  if (!label || !label.startsWith(marker)) return null;
-  const content = label.slice(marker.length).trim();
-  const splitAt = content.lastIndexOf(" by ");
-  if (splitAt <= 0) return null;
-  const name = content.slice(0, splitAt).trim();
-  const artist = content.slice(splitAt + 4).trim();
-  if (!name || !artist) return null;
-  return { name, artist, album: "" };
-}
-
-function extractTrackInfoFromPlayButtonAria(scope) {
-  if (!(scope instanceof Element)) return null;
-  const button = scope.matches?.(".main-trackList-rowImagePlayButton")
-    ? scope
-    : scope.querySelector(".main-trackList-rowImagePlayButton");
-  const label = button?.getAttribute("aria-label") || "";
-  return parseTrackInfoFromLabel(label, "Play ");
-}
-
-function extractTrackInfoFromAriaLabel(target) {
-  if (!(target instanceof Element)) return null;
-  const playInfo = extractTrackInfoFromPlayButtonAria(target.closest('[role="row"]') || target);
-  if (playInfo) return playInfo;
-
-  const labelled = target.closest("[aria-label]");
-  const label = labelled?.getAttribute("aria-label") || "";
-  return parseTrackInfoFromLabel(label, "More options for ");
-}
-
-function captureContextMenuTrackInfo(event) {
-  try {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
-    const trackInfoFromLabel = extractTrackInfoFromAriaLabel(target);
-    const trackInfo = trackInfoFromLabel;
-    if (!trackInfo) return;
-
-    ytvLastContextTrackInfo = {
-      timestamp: Date.now(),
-      trackInfo
-    };
-  } catch (error) {
-    console.debug("YT-Video: Failed to capture contextmenu track info:", error);
-  }
-}
-
-function getRecentLastContextTrackInfo() {
-  if (!ytvLastContextTrackInfo) return null;
-  if (Date.now() - ytvLastContextTrackInfo.timestamp > YTV_CONTEXT_LAST_TRACK_INFO_TTL_MS) {
-    ytvLastContextTrackInfo = null;
-    return null;
-  }
-  return ytvLastContextTrackInfo.trackInfo;
-}
-
-// Use window object for persistent registration flag to prevent duplicates on reload
-const getContextMenuRegisteredFlag = () => {
-  if (!window.__ytvContextMenuRegistered) {
-    window.__ytvContextMenuRegistered = false;
-  }
-  return window.__ytvContextMenuRegistered;
-};
-
-const setContextMenuRegisteredFlag = (value) => {
-  window.__ytvContextMenuRegistered = value;
-};
+let ytvContextMenuRegistered = false;
 
 // Declare performSearch, showApiResults, and showEmbedResults globally so they can be accessed by showVideoPlayer
 let performSearch;
@@ -997,61 +923,17 @@ async function makeApiCallWithRetry(apiUrl, retryCount = 0) {
  */
 async function getTrackInfoFromURI(uri) {
   console.debug("YT-Video: Getting track info from URI:", uri);
-  console.debug("YT-Video: URI length:", uri ? uri.length : "null", "URI type:", typeof uri);
-
-  // Check cache first to avoid rate limiting
-  const cacheKey = `uri:${uri}`;
-  const cachedInfo = cacheUtils.get(cacheKey);
-  if (cachedInfo) {
-    console.debug("YT-Video: Using cached track info for URI:", uri);
-    return cachedInfo;
-  }
-
-  const blockedUntil = ytvRateLimitedUntilByUri.get(uri);
-  if (blockedUntil && blockedUntil > Date.now()) {
-    const secondsLeft = Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
-    console.warn(`YT-Video: URI temporarily rate-limited, skipping API call for ${secondsLeft}s:`, uri);
-    return null;
-  }
 
   try {
     if (uri.includes("spotify:track:")) {
       // It's a track URI
-      const parts = uri.split("spotify:track:");
-      console.debug("YT-Video: Split parts:", parts, "parts length:", parts.length);
-
-      const trackId = parts[1];
-      console.debug("YT-Video: Raw trackId:", trackId, "trackId length:", trackId ? trackId.length : "null");
-
-      if (!trackId || trackId.trim() === "") {
-        console.error("YT-Video: Could not extract valid track ID from URI:", uri);
+      const trackId = uri.split("spotify:track:")[1];
+      if (!trackId) {
+        console.error("YT-Video: Could not extract track ID from URI:", uri);
         return null;
       }
 
-      // Remove any trailing characters like query params or context info
-      const cleanTrackId = trackId.split("?")[0].split("|")[0].trim();
-      console.debug("YT-Video: Cleaned track ID:", cleanTrackId, "length:", cleanTrackId.length);
-
-      const apiUrl = `https://api.spotify.com/v1/tracks/${cleanTrackId}`;
-      console.debug("YT-Video: Calling Spotify API:", apiUrl);
-
-      const trackInfo = await makeApiCallWithRetry(apiUrl);
-
-      // Check if response has a 429 rate limit error embedded in the response
-      if (trackInfo && trackInfo.code === 429) {
-        console.error("YT-Video: Rate limited (429 in response):", trackInfo);
-        logRateLimitInfo(trackInfo, "rate limit response");
-        const retryAfter = getRetryAfterSeconds(trackInfo);
-        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
-        return null;
-      }
-
-      // Check if response has error
-      if (trackInfo && trackInfo.error) {
-        console.error("YT-Video: Spotify API error:", trackInfo.error);
-        logRateLimitInfo(trackInfo, "error response");
-        return null;
-      }
+      const trackInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${trackId}`);
 
       if (trackInfo && trackInfo.name) {
         console.debug("YT-Video: Found track info from track URI - name:", trackInfo.name, "artist:", trackInfo.artists?.[0]?.name);
@@ -1060,42 +942,18 @@ async function getTrackInfoFromURI(uri) {
           artist: trackInfo.artists?.[0]?.name || "",
           album: trackInfo.album?.name || ""
         };
-        // Cache for future use
-        cacheUtils.set(cacheKey, result);
-        return result;
       } else {
-        console.error("YT-Video: Track API response missing expected fields - response object:", JSON.stringify(trackInfo));
-        return null;
+        console.error("YT-Video: Track API response missing expected fields:", trackInfo);
       }
     } else if (uri.includes("spotify:album:")) {
       // It's an album URI
-      const parts = uri.split("spotify:album:");
-      const albumId = parts[1];
-      const cleanAlbumId = albumId.split("?")[0].split("|")[0].trim();
-
-      if (!cleanAlbumId) {
+      const albumId = uri.split("spotify:album:")[1];
+      if (!albumId) {
         console.error("YT-Video: Could not extract album ID from URI:", uri);
         return null;
       }
 
-      console.debug("YT-Video: Extracted album ID:", cleanAlbumId);
-      const apiUrl = `https://api.spotify.com/v1/albums/${cleanAlbumId}`;
-      console.debug("YT-Video: Calling Spotify API:", apiUrl);
-
-      const albumInfo = await makeApiCallWithRetry(apiUrl);
-
-      // Check if response has a 429 rate limit error embedded in the response
-      if (albumInfo && albumInfo.code === 429) {
-        console.error("YT-Video: Rate limited (429 in response):", albumInfo);
-        const retryAfter = getRetryAfterSeconds(albumInfo);
-        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
-        return null;
-      }
-
-      if (albumInfo && albumInfo.error) {
-        console.error("YT-Video: Spotify API error:", albumInfo.error);
-        return null;
-      }
+      const albumInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${albumId}`);
 
       if (albumInfo && albumInfo.name) {
         console.debug("YT-Video: Found album info from album URI - name:", albumInfo.name, "artist:", albumInfo.artists?.[0]?.name);
@@ -1104,42 +962,18 @@ async function getTrackInfoFromURI(uri) {
           artist: albumInfo.artists?.[0]?.name || "",
           album: albumInfo.name
         };
-        // Cache for future use
-        cacheUtils.set(cacheKey, result);
-        return result;
       } else {
-        console.error("YT-Video: Album API response missing expected fields - response object:", JSON.stringify(albumInfo));
-        return null;
+        console.error("YT-Video: Album API response missing expected fields:", albumInfo);
       }
     } else if (uri.includes("spotify:artist:")) {
       // It's an artist URI
-      const parts = uri.split("spotify:artist:");
-      const artistId = parts[1];
-      const cleanArtistId = artistId.split("?")[0].split("|")[0].trim();
-
-      if (!cleanArtistId) {
+      const artistId = uri.split("spotify:artist:")[1];
+      if (!artistId) {
         console.error("YT-Video: Could not extract artist ID from URI:", uri);
         return null;
       }
 
-      console.debug("YT-Video: Extracted artist ID:", cleanArtistId);
-      const apiUrl = `https://api.spotify.com/v1/artists/${cleanArtistId}`;
-      console.debug("YT-Video: Calling Spotify API:", apiUrl);
-
-      const artistInfo = await makeApiCallWithRetry(apiUrl);
-
-      // Check if response has a 429 rate limit error embedded in the response
-      if (artistInfo && artistInfo.code === 429) {
-        console.error("YT-Video: Rate limited (429 in response):", artistInfo);
-        const retryAfter = getRetryAfterSeconds(artistInfo);
-        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
-        return null;
-      }
-
-      if (artistInfo && artistInfo.error) {
-        console.error("YT-Video: Spotify API error:", artistInfo.error);
-        return null;
-      }
+      const artistInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists/${artistId}`);
 
       if (artistInfo && artistInfo.name) {
         console.debug("YT-Video: Found artist info from artist URI - name:", artistInfo.name);
@@ -1148,12 +982,8 @@ async function getTrackInfoFromURI(uri) {
           artist: artistInfo.name,
           album: ""
         };
-        // Cache for future use
-        cacheUtils.set(cacheKey, result);
-        return result;
       } else {
-        console.error("YT-Video: Artist API response missing expected fields - response object:", JSON.stringify(artistInfo));
-        return null;
+        console.error("YT-Video: Artist API response missing expected fields:", artistInfo);
       }
     }
 
@@ -1913,8 +1743,8 @@ async function addYouTubeButton() {
  * Adds context menu items for YouTube search
  */
 function addContextMenuItems() {
-  // Prevent duplicate registrations using persistent flag
-  if (getContextMenuRegisteredFlag()) {
+  // Prevent duplicate registrations
+  if (ytvContextMenuRegistered) {
     console.debug("YT-Video: Context menu items already registered, skipping");
     return;
   }
@@ -1945,9 +1775,6 @@ function addContextMenuItems() {
         return;
       }
 
-      console.debug("YT-Video: Number of URIs provided:", uris.length);
-      console.debug("YT-Video: All URIs:", uris);
-
       // Pause the song if it's playing
       if (Spicetify.Player.isPlaying()) {
         console.debug("YT-Video: Pausing playback");
@@ -1957,27 +1784,14 @@ function addContextMenuItems() {
       // Get the first URI (we only handle one at a time)
       const uri = uris[0];
       console.debug("YT-Video: Context menu item clicked for URI:", uri);
-      console.debug("YT-Video: URI type check - includes track:", uri.includes("spotify:track:"), "includes album:", uri.includes("spotify:album:"), "includes artist:", uri.includes("spotify:artist:"));
 
-      let trackInfo = null;
+      // Get track info from URI
+      let trackInfo = await getTrackInfoFromURI(uri);
 
-      try {
-        trackInfo = getRecentLastContextTrackInfo();
-      } catch (e) {
-        console.debug("YT-Video: DOM extraction error:", e);
-      }
-
-      // If DOM extraction failed, try API
+      // Fallback to current track info if URI lookup failed
       if (!trackInfo) {
-        console.debug("YT-Video: DOM extraction failed, attempting API call for track info");
-        trackInfo = await getTrackInfoFromURI(uri);
-      }
-
-      // If still no info, show error
-      if (!trackInfo) {
-        console.error("YT-Video: Failed to get track information from URI:", uri);
-        showYtvNotification("Could not retrieve track information");
-        return;
+        console.debug("YT-Video: URI lookup failed, falling back to current track info");
+        trackInfo = getCurrentTrackInfo();
       }
 
       // Open YouTube video for the track
@@ -1989,8 +1803,8 @@ function addContextMenuItems() {
 
       const uri = uris[0];
       return uri.includes("spotify:track:") ||
-        uri.includes("spotify:album:") ||
-        uri.includes("spotify:artist:");
+             uri.includes("spotify:album:") ||
+             uri.includes("spotify:artist:");
     },
     YTV_CONTEXT_MENU_ICON
   );
@@ -1998,8 +1812,8 @@ function addContextMenuItems() {
   // Register the context menu item
   watchOnYouTubeItem.register();
 
-  // Mark as registered to prevent duplicates using persistent flag
-  setContextMenuRegisteredFlag(true);
+  // Mark as registered to prevent duplicates
+  ytvContextMenuRegistered = true;
 
   console.debug("YT-Video: Added context menu items");
 }
