@@ -27,6 +27,11 @@ const YTV_MUSIC_VIDEO_SEARCH_SUFFIX = "music video";
 const YTV_CACHE_KEY_PREFIX = "yt-video:cache:";
 const YTV_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const YTV_SEARCH_CACHE_SIZE = 100; // Maximum number of cached search results
+const YTV_CONTEXT_MENU_GUARD_MS = 800;
+const YTV_RATE_LIMIT_FALLBACK_SECONDS = 15;
+const YTV_MAX_RETRY_AFTER_SECONDS = 60;
+const YTV_NOTIFICATION_DURATION_MS = 3000;
+const YTV_CONTEXT_LAST_TRACK_INFO_TTL_MS = 5000;
 
 // Default settings
 const YTV_DEFAULT_SETTINGS = {
@@ -38,7 +43,76 @@ const YTV_DEFAULT_SETTINGS = {
 
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
-let ytvContextMenuRegistered = false;
+const ytvRateLimitedUntilByUri = new Map();
+let ytvLastContextMenuActionAt = 0;
+let ytvLastContextTrackInfo = null;
+
+function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
+  Spicetify.showNotification(message, false, durationMs);
+}
+
+function parseTrackInfoFromLabel(label, marker) {
+  if (!label || !label.startsWith(marker)) return null;
+  const content = label.slice(marker.length).trim();
+  const splitAt = content.lastIndexOf(" by ");
+  if (splitAt <= 0) return null;
+  const name = content.slice(0, splitAt).trim();
+  const artist = content.slice(splitAt + 4).trim();
+  if (!name || !artist) return null;
+  return { name, artist, album: "" };
+}
+
+function extractTrackInfoFromPlayButtonAria(scope) {
+  if (!(scope instanceof Element)) return null;
+  const button = scope.matches?.(".main-trackList-rowImagePlayButton")
+    ? scope
+    : scope.querySelector(".main-trackList-rowImagePlayButton");
+  const label = button?.getAttribute("aria-label") || "";
+  return parseTrackInfoFromLabel(label, "Play ");
+}
+
+function extractTrackInfoFromAriaLabel(target) {
+  if (!(target instanceof Element)) return null;
+  const playInfo = extractTrackInfoFromPlayButtonAria(target.closest('[role="row"]') || target);
+  if (playInfo) return playInfo;
+
+  const labelled = target.closest("[aria-label]");
+  const label = labelled?.getAttribute("aria-label") || "";
+  return parseTrackInfoFromLabel(label, "More options for ");
+}
+
+function captureContextMenuTrackInfo(event) {
+  try {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const trackInfo = extractTrackInfoFromAriaLabel(target);
+    if (!trackInfo) return;
+    ytvLastContextTrackInfo = { timestamp: Date.now(), trackInfo };
+  } catch (error) {
+    console.debug("YT-Video: Failed to capture contextmenu track info:", error);
+  }
+}
+
+function getRecentLastContextTrackInfo() {
+  if (!ytvLastContextTrackInfo) return null;
+  if (Date.now() - ytvLastContextTrackInfo.timestamp > YTV_CONTEXT_LAST_TRACK_INFO_TTL_MS) {
+    ytvLastContextTrackInfo = null;
+    return null;
+  }
+  return ytvLastContextTrackInfo.trackInfo;
+}
+
+// Use window object for persistent registration flag to prevent duplicates on reload
+const getContextMenuRegisteredFlag = () => {
+  if (!window.__ytvContextMenuRegistered) {
+    window.__ytvContextMenuRegistered = false;
+  }
+  return window.__ytvContextMenuRegistered;
+};
+
+const setContextMenuRegisteredFlag = (value) => {
+  window.__ytvContextMenuRegistered = value;
+};
 
 // Declare performSearch, showApiResults, and showEmbedResults globally so they can be accessed by showVideoPlayer
 let performSearch;
@@ -313,42 +387,42 @@ const showVideoPlayer = (videoId, videoIndex = 0, videoList = []) => {
       }
 
       // Reset content container height
-        contentContainer.style.height = "calc(100% - 56px)";
+      contentContainer.style.height = "calc(100% - 56px)";
 
-        // Reset modal content section
-        if (modalContainer) {
-          // Restore padding
-          modalContainer.style.padding = "";
+      // Reset modal content section
+      if (modalContainer) {
+        // Restore padding
+        modalContainer.style.padding = "";
 
-          const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-          if (contentSection) {
-            contentSection.style.height = "calc(80vh - 60px)";
-            contentSection.style.maxHeight = "calc(80vh - 60px)";
-            contentSection.style.padding = "";
-            contentSection.style.margin = "";
-          }
-
-          // Restore padding for inner containers
-          const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-          if (innerContainer) {
-            innerContainer.style.padding = "";
-            innerContainer.style.margin = "";
-          }
-
-          const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-          if (creditsContainer) {
-            creditsContainer.style.padding = "";
-            creditsContainer.style.margin = "";
-          }
-
-          // Restore modal overlay padding
-          const modalOverlay = document.querySelector('.GenericModal__overlay');
-          if (modalOverlay) {
-            modalOverlay.style.padding = "";
-          }
+        const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
+        if (contentSection) {
+          contentSection.style.height = "calc(80vh - 60px)";
+          contentSection.style.maxHeight = "calc(80vh - 60px)";
+          contentSection.style.padding = "";
+          contentSection.style.margin = "";
         }
 
-        performSearch(); // This might cause an error if performSearch is not defined globally
+        // Restore padding for inner containers
+        const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
+        if (innerContainer) {
+          innerContainer.style.padding = "";
+          innerContainer.style.margin = "";
+        }
+
+        const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
+        if (creditsContainer) {
+          creditsContainer.style.padding = "";
+          creditsContainer.style.margin = "";
+        }
+
+        // Restore modal overlay padding
+        const modalOverlay = document.querySelector('.GenericModal__overlay');
+        if (modalOverlay) {
+          modalOverlay.style.padding = "";
+        }
+      }
+
+      performSearch(); // This might cause an error if performSearch is not defined globally
     }
 
     return false;
@@ -499,13 +573,13 @@ const cacheUtils = {
     try {
       const item = localStorage.getItem(YTV_CACHE_KEY_PREFIX + key);
       if (!item) return null;
-      
+
       const { value, timestamp } = JSON.parse(item);
       if (Date.now() - timestamp > YTV_CACHE_DURATION_MS) {
         localStorage.removeItem(YTV_CACHE_KEY_PREFIX + key);
         return null;
       }
-      
+
       return value;
     } catch (error) {
       console.warn("YT-Video: Error reading from cache:", error);
@@ -668,11 +742,11 @@ function showSettings() {
         ytvSettings.apiKey = apiKeyInput?.value || "";
         ytvSettings.showThumbnails = showThumbnailsCheckbox?.checked || false;
         ytvSettings.autoplay = autoplayCheckbox?.checked || false;
-        
+
         saveSettings();
         Spicetify.PopupModal.hide();
-        
-        Spicetify.showNotification("Settings saved");
+
+        showYtvNotification("Settings saved");
       });
     }
   }, 0);
@@ -686,10 +760,10 @@ function showSettings() {
  */
 async function getElement(selector, parent = null) {
   for (let retryCount = 0; retryCount < YTV_RETRY_LIMIT; retryCount++) {
-    const element = parent instanceof Element 
-      ? parent.querySelector(selector) 
+    const element = parent instanceof Element
+      ? parent.querySelector(selector)
       : document.querySelector(selector);
-    
+
     if (element) {
       console.debug(`YT-Video: Found element '${selector}' on attempt ${retryCount + 1}`);
       return element;
@@ -743,7 +817,7 @@ function createYouTubeButton() {
  */
 function getCurrentTrackInfo() {
   console.debug("YT-Video: Getting current track info");
-  
+
   try {
     // Method 1: Use Spicetify.Player.data
     if (Spicetify.Player && Spicetify.Player.data) {
@@ -758,7 +832,7 @@ function getCurrentTrackInfo() {
         };
       }
     }
-    
+
     // Method 2: Use Spicetify.Player.getTrackInfo()
     try {
       if (Spicetify.Player && typeof Spicetify.Player.getTrackInfo === 'function') {
@@ -775,12 +849,12 @@ function getCurrentTrackInfo() {
     } catch (e) {
       console.debug("YT-Video: Error getting track info from Player.getTrackInfo():", e);
     }
-    
+
     // Method 3: Use DOM elements
     // Try to get track name and artist from the now playing bar
     const trackNameElement = document.querySelector(".main-nowPlayingWidget-nowPlaying .main-trackInfo-name");
     const artistNameElement = document.querySelector(".main-nowPlayingWidget-nowPlaying .main-trackInfo-artists");
-    
+
     if (trackNameElement && artistNameElement) {
       console.debug("YT-Video: Found track info using DOM elements");
       return {
@@ -789,11 +863,11 @@ function getCurrentTrackInfo() {
         album: ""
       };
     }
-    
+
     // Method 4: Try alternative DOM selectors
     const trackNameAlt = document.querySelector("[data-testid='now-playing-widget'] .main-trackInfo-name");
     const artistNameAlt = document.querySelector("[data-testid='now-playing-widget'] .main-trackInfo-artists");
-    
+
     if (trackNameAlt && artistNameAlt) {
       console.debug("YT-Video: Found track info using alternative DOM selectors");
       return {
@@ -802,7 +876,7 @@ function getCurrentTrackInfo() {
         album: ""
       };
     }
-    
+
     // Method 5: Use document title as last resort
     const title = document.title;
     if (title && title.includes(" - ") && !title.startsWith("Spotify")) {
@@ -816,7 +890,7 @@ function getCurrentTrackInfo() {
         };
       }
     }
-    
+
     console.error("YT-Video: Could not find track info using any method");
     return null;
   } catch (error) {
@@ -833,6 +907,46 @@ function getCurrentTrackInfo() {
 async function getTrackInfoFromURI(uri) {
   console.debug("YT-Video: Getting track info from URI:", uri);
 
+  const blockedUntil = ytvRateLimitedUntilByUri.get(uri);
+  if (blockedUntil && blockedUntil > Date.now()) {
+    const secondsLeft = Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
+    console.warn(`YT-Video: URI temporarily rate-limited, skipping API call for ${secondsLeft}s:`, uri);
+    return null;
+  }
+
+  const getRetryAfterSeconds = (responseLike) => {
+    const raw = responseLike?.headers?.["retry-after"] ||
+      responseLike?.["retry-after"] ||
+      responseLike?.response?.headers?.["retry-after"];
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.min(parsed, YTV_MAX_RETRY_AFTER_SECONDS);
+    }
+    return YTV_RATE_LIMIT_FALLBACK_SECONDS;
+  };
+
+  const makeApiCallWithRetry = async (apiUrl, retryCount = 0) => {
+    const MAX_RETRIES = 1;
+    try {
+      const response = await Spicetify.CosmosAsync.get(apiUrl);
+      if (response && response.code === 429 && retryCount < MAX_RETRIES) {
+        const retryAfter = getRetryAfterSeconds(response);
+        showYtvNotification(`Rate limited. Retrying in ${retryAfter}s...`);
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        return makeApiCallWithRetry(apiUrl, retryCount + 1);
+      }
+      return response;
+    } catch (error) {
+      if ((error.status === 429 || error.response?.status === 429) && retryCount < MAX_RETRIES) {
+        const retryAfter = getRetryAfterSeconds(error);
+        showYtvNotification(`Rate limited. Retrying in ${retryAfter}s...`);
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        return makeApiCallWithRetry(apiUrl, retryCount + 1);
+      }
+      throw error;
+    }
+  };
+
   try {
     if (uri.includes("spotify:track:")) {
       // It's a track URI
@@ -842,7 +956,13 @@ async function getTrackInfoFromURI(uri) {
         return null;
       }
 
-      const trackInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${trackId}`);
+      const trackInfo = await makeApiCallWithRetry(`https://api.spotify.com/v1/tracks/${trackId}`);
+
+      if (trackInfo && trackInfo.code === 429) {
+        const retryAfter = getRetryAfterSeconds(trackInfo);
+        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
+        return null;
+      }
 
       if (trackInfo && trackInfo.name) {
         console.debug("YT-Video: Found track info from track URI");
@@ -862,7 +982,13 @@ async function getTrackInfoFromURI(uri) {
         return null;
       }
 
-      const albumInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/albums/${albumId}`);
+      const albumInfo = await makeApiCallWithRetry(`https://api.spotify.com/v1/albums/${albumId}`);
+
+      if (albumInfo && albumInfo.code === 429) {
+        const retryAfter = getRetryAfterSeconds(albumInfo);
+        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
+        return null;
+      }
 
       if (albumInfo && albumInfo.name) {
         console.debug("YT-Video: Found album info from album URI");
@@ -882,7 +1008,13 @@ async function getTrackInfoFromURI(uri) {
         return null;
       }
 
-      const artistInfo = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists/${artistId}`);
+      const artistInfo = await makeApiCallWithRetry(`https://api.spotify.com/v1/artists/${artistId}`);
+
+      if (artistInfo && artistInfo.code === 429) {
+        const retryAfter = getRetryAfterSeconds(artistInfo);
+        ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
+        return null;
+      }
 
       if (artistInfo && artistInfo.name) {
         console.debug("YT-Video: Found artist info from artist URI");
@@ -900,6 +1032,10 @@ async function getTrackInfoFromURI(uri) {
     return null;
   } catch (error) {
     console.error("YT-Video: Error getting track info from URI:", error);
+    if (error.status === 429 || error.response?.status === 429) {
+      const retryAfter = 15;
+      ytvRateLimitedUntilByUri.set(uri, Date.now() + (retryAfter * 1000));
+    }
     return null;
   }
 }
@@ -910,20 +1046,20 @@ async function getTrackInfoFromURI(uri) {
  */
 function openYouTubeVideoForTrack(trackInfo) {
   if (!trackInfo) {
-    Spicetify.showNotification("No track information available");
+    showYtvNotification("No track information available");
     return;
   }
-  
+
   // If API key is not set but API search is enabled, show settings
   if (ytvSettings.useApiKey && !ytvSettings.apiKey) {
-    Spicetify.showNotification("Please set your YouTube API key in settings");
+    showYtvNotification("Please set your YouTube API key in settings");
     showSettings();
     return;
   }
-  
+
   let searchQuery;
   let headerTitle = "YT Video Search";
-  
+
   // Continue with normal search if no cache hit
   if (trackInfo.name && trackInfo.artist) {
     searchQuery = `${trackInfo.artist} - ${trackInfo.name} ${YTV_MUSIC_VIDEO_SEARCH_SUFFIX}`;
@@ -932,15 +1068,15 @@ function openYouTubeVideoForTrack(trackInfo) {
   } else if (trackInfo.name && !trackInfo.artist) {
     searchQuery = `${trackInfo.name} full album`;
   } else {
-    Spicetify.showNotification("Insufficient track information");
+    showYtvNotification("Insufficient track information");
     return;
   }
-  
+
   const encodedQuery = encodeURIComponent(searchQuery);
-  
+
   // Show notification
-  Spicetify.showNotification(`Searching for "${searchQuery}" on YouTube...`);
-  
+  showYtvNotification(`Searching for "${searchQuery}" on YouTube...`);
+
   // Create a simple modal with just the search bar and results
   Spicetify.PopupModal.display({
     title: headerTitle,
@@ -962,8 +1098,8 @@ function openYouTubeVideoForTrack(trackInfo) {
     `,
     isLarge: true,
   });
-  
-  
+
+
   // Apply custom styling to make the modal larger
   setTimeout(() => {
     // Find the modal container
@@ -974,14 +1110,14 @@ function openYouTubeVideoForTrack(trackInfo) {
       modalContainer.style.height = '80vh';
       modalContainer.style.maxWidth = '80vw';
       modalContainer.style.maxHeight = '80vh';
-      
+
       // Center the modal
       modalContainer.style.position = 'fixed';
       modalContainer.style.left = '50%';
-      modalContainer.style.top = '50%';
+      modalContainer.style.top = '45%';
       modalContainer.style.transform = 'translate(-50%, -50%)';
       modalContainer.style.zIndex = '9999';
-      
+
       // Adjust inner content
       const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
       if (contentSection) {
@@ -989,7 +1125,7 @@ function openYouTubeVideoForTrack(trackInfo) {
         contentSection.style.maxHeight = 'calc(80vh - 40px)'; // Reduced from 60px to 40px
         contentSection.style.overflow = 'hidden';
       }
-      
+
       // Make sure the container is visible
       const container = modalContainer.querySelector('.main-embedWidgetGenerator-container');
       if (container) {
@@ -999,14 +1135,14 @@ function openYouTubeVideoForTrack(trackInfo) {
         container.style.flexDirection = 'column';
         container.style.overflow = 'hidden';
       }
-      
+
       // Modify the header to take up less space
       const header = modalContainer.querySelector('.main-trackCreditsModal-header');
       if (header) {
         header.style.padding = '8px 16px'; // Reduced padding
         header.style.minHeight = '40px'; // Reduced height
         header.style.height = '40px'; // Fixed height
-        
+
         // Adjust the title font size
         const title = header.querySelector('.main-type-alto');
         if (title) {
@@ -1017,13 +1153,13 @@ function openYouTubeVideoForTrack(trackInfo) {
           title.style.maxWidth = 'calc(100% - 40px)'; // Leave space for close button
         }
       }
-      
+
       // Prevent modal from closing when clicking inside
       const modalOverlay = document.querySelector('.GenericModal__overlay');
       if (modalOverlay) {
         // Store the original click handler
         const originalClickHandler = modalOverlay.onclick;
-        
+
         // Replace with our handler that checks if click is on overlay
         modalOverlay.onclick = (e) => {
           // Only close if clicking directly on the overlay (not its children)
@@ -1038,7 +1174,7 @@ function openYouTubeVideoForTrack(trackInfo) {
           }
         };
       }
-      
+
       // Add cleanup for close button
       const closeButton = modalContainer.querySelector('[aria-label="Close"]');
       if (closeButton) {
@@ -1049,7 +1185,7 @@ function openYouTubeVideoForTrack(trackInfo) {
           if (originalCloseHandler) originalCloseHandler(e);
         };
       }
-      
+
       // Add click handler to the container to prevent event bubbling
       const ytvContainer = document.getElementById('ytv-container');
       if (ytvContainer) {
@@ -1059,7 +1195,7 @@ function openYouTubeVideoForTrack(trackInfo) {
       }
     }
   }, 100);
-  
+
   // Add event listeners
   setTimeout(() => {
     const searchInput = document.getElementById("ytv-search-input");
@@ -1068,24 +1204,24 @@ function openYouTubeVideoForTrack(trackInfo) {
     const settingsButton = document.getElementById("ytv-settings-button");
     const helpButton = document.getElementById("ytv-help-button");
     const contentContainer = document.getElementById("ytv-content");
-    
+
     // Function to show search results using API
     showApiResults = async (query) => {
       console.debug("YT-Video: Showing API results for:", query);
       const currentContentContainer = document.getElementById("ytv-content"); // Get fresh reference
-      
+
       // Show loading spinner
       currentContentContainer.innerHTML = `
         <div style="width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #121212;">
           <div class="main-loadingSpinner-spinner"></div>
         </div>
       `;
-      
+
       try {
         // Check cache first
         const searchCacheKey = cacheUtils.getSearchKey(query); // Renamed to avoid conflict
         const cachedResults = cacheUtils.get(searchCacheKey);
-        
+
         let data;
         if (cachedResults) {
           console.debug("YT-Video: Using cached results for:", query);
@@ -1095,11 +1231,11 @@ function openYouTubeVideoForTrack(trackInfo) {
           const encodedApiQuery = encodeURIComponent(query); // Renamed to avoid conflict
           const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedApiQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`);
           data = await response.json();
-          
+
           if (data.error) {
             throw new Error(data.error.message || "API Error");
           }
-          
+
           // Cache the results
           if (data.items && data.items.length > 0) {
             cacheUtils.set(searchCacheKey, data);
@@ -1118,10 +1254,10 @@ function openYouTubeVideoForTrack(trackInfo) {
           `;
           return;
         }
-        
+
         // Store the search results for navigation
         window.ytvSearchResults = data.items;
-        
+
         // Create results container
         const resultsContainer = document.createElement('div');
         resultsContainer.id = 'ytv-results-container';
@@ -1130,13 +1266,13 @@ function openYouTubeVideoForTrack(trackInfo) {
         resultsContainer.style.overflow = 'auto';
         resultsContainer.style.padding = '16px';
         resultsContainer.style.background = '#121212';
-        
+
         // Create results grid
         const resultsGrid = document.createElement('div');
         resultsGrid.style.display = 'grid';
         resultsGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
         resultsGrid.style.gap = '16px';
-        
+
         // Add results to grid
         data.items.forEach((item, index) => {
           const resultItem = document.createElement('div');
@@ -1148,7 +1284,7 @@ function openYouTubeVideoForTrack(trackInfo) {
           resultItem.style.background = '#333';
           resultItem.style.borderRadius = '4px';
           resultItem.style.overflow = 'hidden';
-          
+
           // Add thumbnail
           if (ytvSettings.showThumbnails) {
             const thumbnail = document.createElement('img');
@@ -1172,43 +1308,43 @@ function openYouTubeVideoForTrack(trackInfo) {
             `;
             resultItem.appendChild(placeholderDiv);
           }
-          
+
           // Add info
           const infoDiv = document.createElement('div');
           infoDiv.style.padding = '12px';
-          
+
           const titleDiv = document.createElement('div');
           titleDiv.style.fontWeight = 'bold';
           titleDiv.style.marginBottom = '4px';
           titleDiv.textContent = item.snippet.title;
           infoDiv.appendChild(titleDiv);
-          
+
           const channelDiv = document.createElement('div');
           channelDiv.style.color = '#b3b3b3';
           channelDiv.style.fontSize = '14px';
           channelDiv.textContent = item.snippet.channelTitle;
           infoDiv.appendChild(channelDiv);
-          
+
           const dateDiv = document.createElement('div');
           dateDiv.style.color = '#b3b3b3';
           dateDiv.style.fontSize = '12px';
           dateDiv.style.marginTop = '4px';
           dateDiv.textContent = new Date(item.snippet.publishedAt).toLocaleDateString();
           infoDiv.appendChild(dateDiv);
-          
+
           resultItem.appendChild(infoDiv);
-          
+
           // Add hover effects
           resultItem.addEventListener('mouseover', () => {
             resultItem.style.transform = 'scale(1.02)';
             resultItem.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
           });
-          
+
           resultItem.addEventListener('mouseout', () => {
             resultItem.style.transform = 'scale(1)';
             resultItem.style.boxShadow = 'none';
           });
-          
+
           // Add click handler
           resultItem.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1219,22 +1355,22 @@ function openYouTubeVideoForTrack(trackInfo) {
             showVideoPlayer(videoId, videoIndex, data.items);
             return false;
           });
-          
+
           resultsGrid.appendChild(resultItem);
         });
-        
+
         // Add grid to container
         resultsContainer.appendChild(resultsGrid);
-        
+
         // Clear content and add results
         currentContentContainer.innerHTML = '';
         currentContentContainer.appendChild(resultsContainer);
-        
+
         // Prevent clicks on results from closing modal
         resultsContainer.addEventListener('click', (e) => {
           e.stopPropagation();
         });
-        
+
       } catch (error) {
         console.error("YT-Video: Error fetching search results:", error);
         currentContentContainer.innerHTML = `
@@ -1249,76 +1385,76 @@ function openYouTubeVideoForTrack(trackInfo) {
         `;
       }
     };
-    
+
     showEmbedResults = (query) => {
       console.debug("YT-Video: Showing embed results for:", query);
       const currentContentContainer = document.getElementById("ytv-content"); // Get fresh reference
-      
+
       const encodedEmbedQuery = encodeURIComponent(query); // Renamed to avoid conflict
-      
+
       // Create a container for the iframe
       const iframeContainer = document.createElement('div');
       iframeContainer.style.width = '100%';
       iframeContainer.style.height = '100%';
       iframeContainer.style.position = 'relative';
-      
+
       // Create iframe for embed search with proper attributes
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
-      
+
       // Add loading attribute to improve performance
       iframe.loading = "lazy";
-      
+
       // Set src with parameters to avoid preloading issues
       iframe.src = `https://${YTV_NOCOOKIE_DOMAIN}/embed/videoseries?autoplay=0&rel=0&iv_load_policy=3&fs=1&color=red&hl=en&list=search&playlist=${encodedEmbedQuery}&enablejsapi=1`;
-      
+
       // Set permissions
       iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
       iframe.allowFullscreen = true;
-      
+
       // YouTube embeds need to run without sandbox restrictions to function properly
       // We're using youtube-nocookie.com which is already a privacy-enhanced version
-      
+
       // Add the iframe to the container
       iframeContainer.appendChild(iframe);
-      
+
       // Clear content and add the iframe container
       currentContentContainer.innerHTML = '';
       currentContentContainer.appendChild(iframeContainer);
-      
+
       // Add click handler to prevent modal from closing
       iframeContainer.addEventListener('click', (e) => {
         e.stopPropagation();
       });
     };
-    
+
     performSearch = () => {
       const query = searchInput.value.trim();
       console.debug("YT-Video: Performing search for:", query);
-      
+
       if (ytvSettings.useApiKey && ytvSettings.apiKey) {
         showApiResults(query);
       } else {
         showEmbedResults(query);
       }
     };
-    
+
     // MOVED CACHE CHECK LOGIC HERE
     const trackCacheKey = cacheUtils.getTrackKey(trackInfo); // Renamed to avoid conflict
     const cachedVideo = cacheUtils.get(trackCacheKey);
-  
+
     // Always perform search to show results, don't auto-play cached videos
     performSearch(); // Always show search results first
-    
+
     // if (cachedVideo) {
     //   console.debug("YT-Video: Using cached video for track:", trackInfo);
     //   showVideoPlayer(cachedVideo.id.videoId, 0, [cachedVideo]);
     // } else {
     //   performSearch(); // Perform initial search if not cached
     // }
-    
+
     // Add event listeners
     if (searchButton) {
       searchButton.addEventListener('click', (e) => {
@@ -1328,7 +1464,7 @@ function openYouTubeVideoForTrack(trackInfo) {
         return false;
       });
     }
-    
+
     if (searchInput) {
       searchInput.addEventListener('keypress', (event) => {
         if (event.key === 'Enter') {
@@ -1338,13 +1474,13 @@ function openYouTubeVideoForTrack(trackInfo) {
           return false;
         }
       });
-      
+
       // Prevent input from closing modal
       searchInput.addEventListener('click', (e) => {
         e.stopPropagation();
       });
     }
-    
+
     if (youtubeButton) {
       youtubeButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1354,7 +1490,7 @@ function openYouTubeVideoForTrack(trackInfo) {
         return false;
       });
     }
-    
+
     if (settingsButton) {
       settingsButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1365,12 +1501,12 @@ function openYouTubeVideoForTrack(trackInfo) {
         return false;
       });
     }
-    
+
     if (helpButton) {
       helpButton.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Remove any existing help overlay
         const existingHelpOverlay = document.getElementById('ytv-shortcuts-overlay');
         if (existingHelpOverlay) {
@@ -1416,7 +1552,7 @@ function openYouTubeVideoForTrack(trackInfo) {
         closeHelpButton.style.cursor = 'pointer';
         closeHelpButton.setAttribute('aria-label', 'Close help');
         closeHelpButton.setAttribute('title', 'Close help');
-        
+
         closeHelpButton.addEventListener('mouseover', () => { closeHelpButton.style.color = 'white'; });
         closeHelpButton.addEventListener('mouseout', () => { closeHelpButton.style.color = '#aaa'; });
 
@@ -1462,21 +1598,21 @@ function openYouTubeVideoForTrack(trackInfo) {
             shortcutsOverlay.remove();
           }
         });
-        
+
         return false;
       });
     }
-    
+
     // Prevent content container from closing modal
     if (contentContainer) {
       contentContainer.addEventListener('click', (e) => {
         e.stopPropagation();
       });
     }
-    
+
     // Perform initial search // THIS LINE IS NOW REDUNDANT due to the if/else block above
     // performSearch(); 
-    
+
   }, 150); // Increased delay slightly for modal readiness
 }
 
@@ -1488,7 +1624,7 @@ function openYouTubeVideo() {
   if (trackInfo) {
     openYouTubeVideoForTrack(trackInfo);
   } else {
-    Spicetify.showNotification("No track information available");
+    showYtvNotification("No track information available");
   }
 }
 
@@ -1509,7 +1645,7 @@ function handleKeyboardShortcut(event) {
       code: event.code
     });
   }
-  
+
   // Handle ESC key
   if (event.key === 'Escape') {
     event.preventDefault();
@@ -1527,70 +1663,70 @@ function handleKeyboardShortcut(event) {
     const modal = document.querySelector('.GenericModal');
     if (modal && document.getElementById('ytv-container')) {
       console.debug("YT-Video: ESC key pressed, closing main modal/player");
-      
+
       // Clean up video state
       window.ytvCurrentState = null;
-      
+
       // Close the modal by calling Spicetify's hide method
       Spicetify.PopupModal.hide();
-      
+
       return false;
     }
   }
-  
+
   // Check for Ctrl+Y (Windows/Linux) or Cmd+Y (Mac)
   // Use event.code to check for the physical key 'Y'
-  if ((event.ctrlKey || event.metaKey) && event.code === 'KeyY') { 
+  if ((event.ctrlKey || event.metaKey) && event.code === 'KeyY') {
     // Prevent default browser behavior
     event.preventDefault();
     event.stopPropagation();
-    
+
     console.debug("YT-Video: Keyboard shortcut triggered (Ctrl/Cmd+Y with event.code)");
     openYouTubeVideo();
-    
+
     return false;
   }
-  
+
   // Handle video navigation shortcuts when video player is active
   // Use Alt/Option + Arrow keys to avoid conflicts with Spotify player controls
   if (event.altKey && window.ytvCurrentState && window.ytvCurrentState.videoList && window.ytvCurrentState.videoList.length > 0) {
     const { videoIndex, videoList } = window.ytvCurrentState;
-    
+
     if (event.code === 'ArrowLeft') { // Changed to event.code for consistency
       // Go to previous video
       event.preventDefault();
       event.stopPropagation();
-      
+
       console.debug("YT-Video: Keyboard shortcut triggered (Alt/Option+Left Arrow)");
-      
+
       if (videoIndex > 0) {
         const prevIndex = videoIndex - 1;
         const prevVideo = videoList[prevIndex];
         showVideoPlayer(prevVideo.id.videoId, prevIndex, videoList);
       } else {
         // At first video, show notification
-        Spicetify.showNotification("Already at the first video");
+        showYtvNotification("Already at the first video");
       }
-      
+
       return false;
     }
-    
+
     if (event.code === 'ArrowRight') { // Changed to event.code for consistency
       // Go to next video
       event.preventDefault();
       event.stopPropagation();
-      
+
       console.debug("YT-Video: Keyboard shortcut triggered (Alt/Option+Right Arrow)");
-      
+
       if (videoIndex < videoList.length - 1) {
         const nextIndex = videoIndex + 1;
         const nextVideo = videoList[nextIndex];
         showVideoPlayer(nextVideo.id.videoId, nextIndex, videoList);
       } else {
         // At last video, show notification
-        Spicetify.showNotification("Already at the last video");
+        showYtvNotification("Already at the last video");
       }
-      
+
       return false;
     }
   }
@@ -1602,17 +1738,17 @@ function handleKeyboardShortcut(event) {
  */
 async function addYouTubeButton() {
   console.debug("YT-Video: Adding YouTube button");
-  
+
   // Check if button already exists
   const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
   if (existingButton) {
     console.debug("YT-Video: Button already exists");
     return true;
   }
-  
+
   // Create the button
   const button = createYouTubeButton();
-  
+
   // Try to add the button to different locations
   const buttonLocations = [
     ".main-trackInfo-container", // Track info container
@@ -1620,7 +1756,7 @@ async function addYouTubeButton() {
     ".main-nowPlayingBar-right", // Right controls container
     ".main-nowPlayingWidget-nowPlaying" // Now playing widget
   ];
-  
+
   for (const location of buttonLocations) {
     const container = await getElement(location);
     if (container) {
@@ -1629,7 +1765,7 @@ async function addYouTubeButton() {
       return true;
     }
   }
-  
+
   // If no suitable container is found, add to body with fixed position
   console.debug("YT-Video: No suitable container found, adding to body");
   button.style.position = "fixed";
@@ -1637,7 +1773,7 @@ async function addYouTubeButton() {
   button.style.right = "16px";
   button.style.zIndex = "9999";
   document.body.appendChild(button);
-  
+
   return true;
 }
 
@@ -1645,8 +1781,8 @@ async function addYouTubeButton() {
  * Adds context menu items for YouTube search
  */
 function addContextMenuItems() {
-  // Prevent duplicate registrations
-  if (ytvContextMenuRegistered) {
+  // Prevent duplicate registrations using persistent flag
+  if (getContextMenuRegisteredFlag()) {
     console.debug("YT-Video: Context menu items already registered, skipping");
     return;
   }
@@ -1655,13 +1791,21 @@ function addContextMenuItems() {
     console.error("YT-Video: Spicetify.ContextMenu is not available");
     return;
   }
-  
+
   // Add context menu item for tracks, albums, and artists
   const watchOnYouTubeItem = new Spicetify.ContextMenu.Item(
     YTV_CONTEXT_MENU_ITEM,
     async (uris) => {
+      const now = Date.now();
+      if (now - ytvLastContextMenuActionAt < YTV_CONTEXT_MENU_GUARD_MS) {
+        console.debug("YT-Video: Context menu action ignored by re-entry guard");
+        return;
+      }
+      ytvLastContextMenuActionAt = now;
+
       if (!uris || !uris.length) {
         console.error("YT-Video: No URIs provided to context menu handler");
+        showYtvNotification("Error: No track URI provided");
         return;
       }
 
@@ -1675,13 +1819,14 @@ function addContextMenuItems() {
       const uri = uris[0];
       console.debug("YT-Video: Context menu item clicked for URI:", uri);
 
-      // Get track info from URI
-      let trackInfo = await getTrackInfoFromURI(uri);
-
-      // Fallback to current track info if URI lookup failed
+      let trackInfo = getRecentLastContextTrackInfo();
       if (!trackInfo) {
-        console.debug("YT-Video: URI lookup failed, falling back to current track info");
-        trackInfo = getCurrentTrackInfo();
+        trackInfo = await getTrackInfoFromURI(uri);
+      }
+
+      if (!trackInfo) {
+        showYtvNotification("Could not retrieve track information");
+        return;
       }
 
       // Open YouTube video for the track
@@ -1693,17 +1838,17 @@ function addContextMenuItems() {
 
       const uri = uris[0];
       return uri.includes("spotify:track:") ||
-             uri.includes("spotify:album:") ||
-             uri.includes("spotify:artist:");
+        uri.includes("spotify:album:") ||
+        uri.includes("spotify:artist:");
     },
     YTV_CONTEXT_MENU_ICON
   );
-  
+
   // Register the context menu item
   watchOnYouTubeItem.register();
 
-  // Mark as registered to prevent duplicates
-  ytvContextMenuRegistered = true;
+  // Mark as registered to prevent duplicates using persistent flag
+  setContextMenuRegisteredFlag(true);
 
   console.debug("YT-Video: Added context menu items");
 }
@@ -1713,23 +1858,26 @@ function addContextMenuItems() {
  */
 async function init() {
   console.debug("YT-Video: Initializing - attaching event listeners...");
-  
+
   // Load settings
   loadSettings();
-  
+
   // Clean up old cache entries
   cacheUtils.cleanup();
-  
+
   // Add YouTube button
   await addYouTubeButton();
-  
+
   // Add context menu items
   addContextMenuItems();
-  
+
   // Add keyboard shortcut listener
   document.addEventListener('keydown', handleKeyboardShortcut, true);
+  document.addEventListener('pointerdown', captureContextMenuTrackInfo, true);
+  document.addEventListener('mousedown', captureContextMenuTrackInfo, true);
+  document.addEventListener('contextmenu', captureContextMenuTrackInfo, true);
   console.debug("YT-Video: Added keyboard shortcut listener (Ctrl/Cmd+Y & Alt/Opt+Arrows)");
-  
+
   // Add event listeners for track changes to check if button still exists
   Spicetify.Player.addEventListener("songchange", async () => {
     console.debug("YT-Video: Song changed, checking button");
@@ -1740,7 +1888,7 @@ async function init() {
       await addYouTubeButton();
     }
   });
-  
+
   // Also listen for app changes
   Spicetify.Platform.History.listen(async () => {
     console.debug("YT-Video: App navigation detected, checking button");
@@ -1751,7 +1899,7 @@ async function init() {
       await addYouTubeButton();
     }
   });
-  
+
   console.debug("YT-Video: Initialization complete");
 }
 
