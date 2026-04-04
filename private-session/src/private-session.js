@@ -11,12 +11,10 @@ const MENU_OPERATION_COOLDOWN = 500;
 const PS_CSS_SELECTORS = {
   // Look for private session indicator container and search within it
   PRIVATE_SESSION_INDICATOR_CONTAINER: ".Root__globalNav > div:last-child",
-  // Updated main menu selector to be more flexible and match current Spotify UI
-  MAIN_MENU: "button.main-userWidget-box, button[data-testid='user-widget-avatar'], .main-userWidget-box button, [data-testid='user-widget-dropdown'], button.main-avatar-button",
+  MAIN_MENU: ".main-topBar-topbarContentRight button[aria-expanded]",
   MENU_ITEM_LABEL: "span",
   // Updated to be more flexible with menu item detection
   MENU_ITEM_BUTTON: "button[role='menuitemcheckbox'], button[role='menuitem']",
-  MENU_ITEM_CHECKED: "svg",
   // Try multiple possible menu container selectors
   PROFILE_DROPDOWN_MENU: "ul.main-contextMenu-menu, [role='menu'], ul[role='menu']"
 };
@@ -66,7 +64,7 @@ async function getElement(selector, multiple) {
  * @returns {boolean} Whether the button is selected
  */
 function isMenuItemSelected(button) {
-  return !!button.querySelector(PS_CSS_SELECTORS.MENU_ITEM_CHECKED);
+  return button.getAttribute('aria-checked') === 'true';
 }
 
 /**
@@ -179,6 +177,11 @@ async function isPrivateSessionActive() {
 /**
  * Ensures the menu is closed
  */
+function isMenuOpen() {
+  const menuButton = document.querySelector(PS_CSS_SELECTORS.MAIN_MENU);
+  return menuButton && menuButton.getAttribute('aria-expanded') === 'true';
+}
+
 function ensureMenuClosed() {
   // Clear any existing timer
   if (menuCloseTimer) {
@@ -186,22 +189,19 @@ function ensureMenuClosed() {
     menuCloseTimer = null;
   }
 
-  const openMenu = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
-  if (openMenu) {
+  if (isMenuOpen()) {
     console.debug('Private-Session: Closing open menu');
     const menuButton = document.querySelector(PS_CSS_SELECTORS.MAIN_MENU);
     if (menuButton) {
       menuButton.click();
 
-      // Double-check after a shorter delay
       menuCloseTimer = setTimeout(() => {
-        const menuStillOpen = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
-        if (menuStillOpen) {
+        if (isMenuOpen()) {
           console.debug('Private-Session: Menu still open, clicking again');
           menuButton.click();
         }
         menuCloseTimer = null;
-      }, 150); // Reduced from 300
+      }, 150);
     }
   }
 }
@@ -340,8 +340,7 @@ function enablePersistentMode() {
           pendingFocusCheck = false;
 
           // Skip check if conditions not met
-          const openMenu = document.querySelector(PS_CSS_SELECTORS.PROFILE_DROPDOWN_MENU);
-          if (!persistentModeEnabled || menuOperationInProgress || openMenu) {
+          if (!persistentModeEnabled || menuOperationInProgress || isMenuOpen()) {
             console.debug('Private-Session: Skipping focus check - conditions not met');
             return;
           }
