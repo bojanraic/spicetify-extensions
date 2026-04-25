@@ -47,7 +47,7 @@
             get CLOSE_BTN_SELECTOR() { return `div[data-testid='${this.CLOSE_ID}'] > button`; },
             HIDE_BTN_SELECTOR: `button[aria-label="Hide Now Playing view"]`,
             BTN_SELECTOR: `button[data-testid="control-button-npv"]`,
-            get BTN_SELECTOR_ALT() { return `button[aria-label="${this.TEXT_LABEL}"]`; },
+            get BTN_SELECTOR_ALT() { return `button[aria-label="${this.TEXT_LABEL}"]:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON})`; },
             BTN_RESTORE_FOCUS_SELECTOR: 'button[data-restore-focus-key="now_playing_view"]',
         },
         LAYOUT: {
@@ -200,26 +200,20 @@
                     `;
                 }
 
-                // Handle album art click events separately
+                // Album art clicks are blocked by a capture-phase listener below.
+                // Do not disable pointer events here; Spotify's cover art DOM is
+                // also responsible for rendering/hover state in some clients.
                 if (!prefs.albumArtHandler) {
                     cssContent += `
-                        /* Disable click events on cover art elements */
-                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
-                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
-                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
-                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
-                            pointer-events: none !important;
+                        /* Show that cover art is not clickable without affecting rendering */
+                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON} {
                             cursor: default !important;
                         }
                     `;
                 } else {
                     cssContent += `
-                        /* Re-enable click events on cover art elements */
-                        ${SELECTORS.PLAYBAR.COVER_ART_CONTAINER},
-                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON},
-                        ${SELECTORS.PLAYBAR.COVER_ART_CLASS},
-                        ${SELECTORS.PLAYBAR.CONTAINER_CLASS} {
-                            pointer-events: auto !important;
+                        /* Restore the cover art click affordance */
+                        ${SELECTORS.PLAYBAR.COVER_ART_BUTTON} {
                             cursor: pointer !important;
                         }
                     `;
@@ -292,8 +286,7 @@
         // Now Playing
         const npvSelectors = [
             SELECTORS.NPV.ASIDE_SELECTOR,
-            SELECTORS.NPV.ASIDE_SELECTOR_ALT,
-            SELECTORS.NPV.WIDGET_SELECTOR
+            SELECTORS.NPV.ASIDE_SELECTOR_ALT
         ];
         
         for (const selector of npvSelectors) {
@@ -458,8 +451,7 @@
             // Check if NPV appeared and should be hidden
             if (!prefs.nowPlaying) {
                 const nowPlayingView = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                      document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR_ALT) || 
-                                      document.querySelector(SELECTORS.NPV.WIDGET_SELECTOR);
+                                      document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR_ALT);
                                       
                 if (nowPlayingView && !nowPlayingView.classList.contains(CONFIG.HIDDEN_NPV_CLASS)) {
                     setTimeout(() => {
@@ -520,6 +512,20 @@
             attributeFilter: ['style', 'class', 'aria-label']
         });
         console.log('[SidebarCustomizer] Mutation observer is now observing');
+
+        document.addEventListener('click', event => {
+            if (utils.prefs.load().albumArtHandler) return;
+
+            const albumArtClickTarget = event.target?.closest?.([
+                SELECTORS.PLAYBAR.COVER_ART_BUTTON,
+                SELECTORS.PLAYBAR.COVER_ART_CONTAINER
+            ].join(', '));
+
+            if (!albumArtClickTarget) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
         
         // Setup profile menu button listener with enhanced selector support
         utils.dom.getElement(SELECTORS.PROFILE.BUTTON).then(button => {
