@@ -1,29 +1,52 @@
 # Spicetify Sesh-Stats
 
-Spicetify Sesh-Stats is a simple extension that tracks listening statistics for your current Spotify session. 
+Sesh-Stats tracks your Spotify listening statistics — both live session data and persistent history across days — right inside Spotify.
 
 ## Features
-- Displays playback time in Spotify's bottom bar with simple icons
-- Tracks session duration, actual music playback time, and song counts
-- Counts songs started and songs completed/skipped
-- Keeps track of unique tracks played during your session
+
+### Playbar Icon
+- Animated equalizer icon in Spotify's bottom bar while music is playing, paused when stopped
+- Hover for "Session Stats" tooltip
+- Click to open the stats panel
+
+### Now Playing Hero
+- Full-width hero at the top of the panel showing current track art, name, and artist
+- Album art background with blur/color effect pulled from the current track
+- Click track name, artist, or album art to navigate directly to that page in Spotify
+
+### This Session Tab
+- Live playback time and session duration
+- Tracks started, finished/skipped, and unique tracks played (counts tracks listened to for 30+ seconds)
+
+### History Tab
+- Persistent stats saved to `localStorage` — survives Spotify restarts
+- Filter by Last 7 days, Last 30 days, Last 90 days, or All time
+- Top Tracks, Top Artists, Top Albums with album art thumbnails
+- Configurable top N list size (10 / 25 / 50)
+- Click any track, artist, or album to navigate to it in Spotify
+- Export full history as JSON
+- Clear all history with inline confirmation
 
 ## How it works
-- Adds a play time counter with icons in Spotify's bottom status bar
-- Click the counter to open a detailed overlay with complete session statistics
-- All stats are reset when you close Spotify - no data is stored permanently
-- Close the overlay by clicking the X, clicking outside, or pressing Escape
+- A track counts toward history after **30 seconds** of playback (standard scrobble threshold)
+- Stats are saved automatically on pause and when Spotify closes
+- The panel opens over a frosted-glass backdrop; close with ×, click outside, or Escape
+
+## Screenshots
+
+**This Session**
+
+![This Session](screenshot-session.png)
 
 
-## Screenshot
+**History**
 
-![Sesh-Stats Overlay](screenshot.png)
+![History](screenshot-history.png)
 
-*Sesh-Stats overlay showing listening statistics*
 
-##  More
+## More
 Like it? Star it!    
 [![Github Stars badge](https://img.shields.io/github/stars/BojanRaic/spicetify-extensions?logo=github&style=social)](https://github.com/BojanRaic/spicetify-extensions/)
 
 If you experience any problems, please [create a new issue](https://github.com/BojanRaic/spicetify-extensions/issues/new/choose) on the GitHub repo.    
-![https://github.com/BojanRaic/spicetify-extensions/issues](https://img.shields.io/github/issues/BojanRaic/spicetify-extensions?logo=github) 
+![https://github.com/BojanRaic/spicetify-extensions/issues](https://img.shields.io/github/issues/BojanRaic/spicetify-extensions?logo=github)
