@@ -9,6 +9,8 @@
   },
   "scripts": {
     "build": "webpack --mode=production",
+    "build-dev": "webpack --mode=development",
+    "deploy-dev": "npm run build-dev && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply",
     "clean": "rm -rf ./dist",
     "copy": "cp src/sidebar-customizer.js `spicetify path userdata`/Extensions",
     "copy-dist": "cp dist/sidebar-customizer.js `spicetify path userdata`/Extensions/sidebar-customizer.js",

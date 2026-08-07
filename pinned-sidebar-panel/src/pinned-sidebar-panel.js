@@ -15,37 +15,43 @@
         }
     };
 
+    // Translations helper — safe to call once Spicetify is loaded
+    const t = (key, fallback) => Spicetify?.Platform?.Translations?.[key] ?? fallback;
+
     const SELECTORS = {
         FRIEND_ACTIVITY: {
             LABEL: "Friend Activity",
-            BUTTON_ARIA_LABEL: "Friend Activity",
-            get ACTIVATOR_SELECTOR() { return `button[aria-label="${this.BUTTON_ARIA_LABEL}"]`; },
-            CONTENT_SELECTOR: `aside[aria-label="Friend Activity"]`
+            get DISPLAY_LABEL() { return t('buddy-feed.listening-activity', 'Listening activity'); },
+            get ACTIVATOR_SELECTOR() { return `[aria-label="${this.DISPLAY_LABEL}"]`; },
+            get ACTIVE_SELECTOR() { return `${this.ACTIVATOR_SELECTOR}[data-active="true"]`; },
+            CONTENT_SELECTOR: `aside#Desktop_PanelContainer_Id`
         },
         QUEUE: {
             LABEL: "Queue",
-            get ACTIVATOR_SELECTOR() { return `button[aria-label="${this.LABEL}"]`; },
-            CONTENT_SELECTOR: `aside[aria-label="Queue"]`
+            get DISPLAY_LABEL() { return t('playback-control.queue', 'Queue'); },
+            ACTIVATOR_SELECTOR: `button[data-testid="control-button-queue"]`,
+            get ACTIVE_SELECTOR() { return `${this.ACTIVATOR_SELECTOR}[data-active="true"]`; },
+            CONTENT_SELECTOR: `aside#Desktop_PanelContainer_Id`
         },
         CONNECT: {
             LABEL: "Connect to a device",
-            get ACTIVATOR_SELECTOR() { return `button[aria-label="${this.LABEL}"]`; },
-            CONTENT_MODAL_SELECTOR: `aside[aria-label="Connect to a device"], div[aria-label="Connect to a device"][role="dialog"], div[aria-label="Devices Available"][role="dialog"]`
+            get DISPLAY_LABEL() { return t('playback-control.connect-picker', 'Connect to a device'); },
+            get ACTIVATOR_SELECTOR() { return `button[data-testid="super-connect-button"], button[aria-label="${this.DISPLAY_LABEL}"]`; },
+            get CONTENT_MODAL_SELECTOR() {
+                const label = this.DISPLAY_LABEL;
+                return `aside[aria-label="${label}"], div[aria-label="${label}"][role="dialog"], div[aria-label="Devices Available"][role="dialog"]`;
+            }
         },
         NPV: {
             LABEL: "Now Playing view",
-            ASIDE_ARIA_LABEL_PRIMARY: "Now Playing view",
-            ASIDE_ARIA_LABEL_FALLBACK: "Now playing view",
-            BUTTON_ARIA_LABEL: "Now Playing view",
-            BTN_SELECTOR_LEGACY_TESTID: `button[data-testid="control-button-npv"]`,
-            get ACTIVATOR_SELECTOR() { 
-              return [
-                this.BTN_SELECTOR_LEGACY_TESTID, // 1. data-testid (most reliable)
-                `button[aria-label="${this.BUTTON_ARIA_LABEL}"]`, // 2. aria-label "Now Playing view"
-                `button[aria-label="${this.ASIDE_ARIA_LABEL_FALLBACK}"]` // 3. aria-label "Now playing view"
-              ].join(', ');
+            get DISPLAY_LABEL() { return t('web-player.now-playing-view.label', 'Now playing view'); },
+            get ACTIVATOR_SELECTOR() {
+                return `button[data-testid="control-button-npv"], button[aria-label="${this.DISPLAY_LABEL}"]`;
             },
-            get CONTENT_SELECTOR() { return `aside[aria-label="${this.ASIDE_ARIA_LABEL_PRIMARY}"], aside[aria-label="${this.ASIDE_ARIA_LABEL_FALLBACK}"]`; },
+            get ACTIVE_SELECTOR() { return `button[data-testid="control-button-npv"][data-active="true"]`; },
+            get CONTENT_SELECTOR() {
+                return `aside#Desktop_PanelContainer_Id .main-nowPlayingView-container, aside[aria-label="${this.DISPLAY_LABEL}"]`;
+            },
         },
         LAYOUT: {
             RIGHT_SIDEBAR: '.Root__right-sidebar',
@@ -501,22 +507,20 @@
         panelSelect.style.cssText = "background-color:var(--spice-card);color:var(--spice-text);border:1px solid var(--spice-button-disabled);border-radius:4px;padding:4px 8px;";
         const panelOptions = [
             { label: "(Select a panel)", value: "" },
-            SELECTORS.FRIEND_ACTIVITY.LABEL,
-            SELECTORS.QUEUE.LABEL,
-            SELECTORS.CONNECT.LABEL,
-            SELECTORS.NPV.LABEL
+            { label: SELECTORS.FRIEND_ACTIVITY.DISPLAY_LABEL, value: SELECTORS.FRIEND_ACTIVITY.LABEL },
+            { label: SELECTORS.QUEUE.DISPLAY_LABEL, value: SELECTORS.QUEUE.LABEL },
+            { label: SELECTORS.CONNECT.DISPLAY_LABEL, value: SELECTORS.CONNECT.LABEL },
+            { label: SELECTORS.NPV.DISPLAY_LABEL, value: SELECTORS.NPV.LABEL },
         ];
         panelOptions.forEach(opt => {
             const option = document.createElement("option");
-            if (typeof opt === 'string') {
-                option.value = opt; option.textContent = opt;
-                if (prefs.autoRestorePanel === opt) option.selected = true;
-            } else {
-                option.value = opt.value; option.textContent = opt.label;
-                if (opt.value === "") { // Placeholder specific logic
-                    option.disabled = true;
-                    if (!prefs.autoRestorePanel) option.selected = true; // Select placeholder if no panel is chosen
-                }
+            option.value = opt.value;
+            option.textContent = opt.label;
+            if (opt.value === "") {
+                option.disabled = true;
+                if (!prefs.autoRestorePanel) option.selected = true;
+            } else if (prefs.autoRestorePanel === opt.value) {
+                option.selected = true;
             }
             panelSelect.appendChild(option);
         });
@@ -602,8 +606,10 @@
         timeoutItem.appendChild(timeoutInput);
         submenuContainer.appendChild(timeoutItem);
 
-        let settingsItem = Array.from(dropdownMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'))
-            .find(item => item.textContent?.trim() === 'Settings');
+        // Profile menu identified by menuitemcheckbox (Private Session) — language-independent
+        // Insertion point: before the last menuitem block (Settings link goes to /preferences)
+        let settingsItem = Array.from(dropdownMenu.querySelectorAll('[role="menuitem"]'))
+            .find(item => item.closest('a[href*="preferences"]'));
         let referenceNode = null;
         if (settingsItem) {
             while (settingsItem && settingsItem.parentNode !== dropdownMenu) settingsItem = settingsItem.parentNode;
@@ -620,7 +626,8 @@
                 if (mutation.type === 'childList') {
                     const profileMenu = document.querySelector(SELECTORS.PROFILE.DROPDOWN_MENU);
                     if (profileMenu) {
-                        const hasSettings = Array.from(profileMenu.querySelectorAll('[role="menuitem"]')).some(item => item.textContent?.trim() === 'Settings');
+                        // Profile menu has menuitemcheckbox (Private Session) — language-independent
+                        const hasSettings = !!profileMenu.querySelector('[role="menuitemcheckbox"]');
                         if (hasSettings && !profileMenu.querySelector(`#${SELECTORS.PROFILE.SUBMENU_ID}`)) {
                             addCustomSubMenu(profileMenu);
                         }

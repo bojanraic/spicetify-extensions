@@ -51,34 +51,49 @@ function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS)
   Spicetify.showNotification(message, false, durationMs);
 }
 
-function parseTrackInfoFromLabel(label, marker) {
-  if (!label || !label.startsWith(marker)) return null;
-  const content = label.slice(marker.length).trim();
-  const splitAt = content.lastIndexOf(" by ");
-  if (splitAt <= 0) return null;
-  const name = content.slice(0, splitAt).trim();
-  const artist = content.slice(splitAt + 4).trim();
-  if (!name || !artist) return null;
-  return { name, artist, album: "" };
+// Extract track info from a track list row using stable class selectors (language-independent)
+function extractTrackInfoFromRow(element) {
+  const row = element?.closest?.('[role="row"], [role="listitem"], [data-testid="tracklist-row"]');
+  if (!row) return null;
+  const name = row.querySelector('.main-trackInfo-name')?.textContent?.trim();
+  const artist = row.querySelector('.main-trackInfo-artists')?.textContent?.trim();
+  if (name && artist) return { name, artist, album: "" };
+  return null;
 }
 
 function extractTrackInfoFromPlayButtonAria(scope) {
   if (!(scope instanceof Element)) return null;
+  // Try row-based extraction first (language-independent)
+  const rowInfo = extractTrackInfoFromRow(scope);
+  if (rowInfo) return rowInfo;
+  // Fallback: parse aria-label "Play [track] by [artist]" — English Spotify only
   const button = scope.matches?.(".main-trackList-rowImagePlayButton")
     ? scope
     : scope.querySelector(".main-trackList-rowImagePlayButton");
   const label = button?.getAttribute("aria-label") || "";
-  return parseTrackInfoFromLabel(label, "Play ");
+  if (!label.includes(" by ")) return null;
+  const afterPlay = label.replace(/^[^"]*?\s/, ""); // strip leading verb
+  const splitAt = afterPlay.lastIndexOf(" by ");
+  if (splitAt <= 0) return null;
+  return { name: afterPlay.slice(0, splitAt).trim(), artist: afterPlay.slice(splitAt + 4).trim(), album: "" };
 }
 
 function extractTrackInfoFromAriaLabel(target) {
   if (!(target instanceof Element)) return null;
+  // Try row-based extraction first (language-independent)
+  const rowInfo = extractTrackInfoFromRow(target);
+  if (rowInfo) return rowInfo;
   const playInfo = extractTrackInfoFromPlayButtonAria(target.closest('[role="row"]') || target);
   if (playInfo) return playInfo;
-
+  // Fallback: parse aria-label "More options for [track] by [artist]" — English Spotify only
   const labelled = target.closest("[aria-label]");
   const label = labelled?.getAttribute("aria-label") || "";
-  return parseTrackInfoFromLabel(label, "More options for ");
+  if (!label.includes(" by ")) return null;
+  const splitAt = label.lastIndexOf(" by ");
+  const afterVerb = label.replace(/^[^"]*?\s/, "");
+  const splitAt2 = afterVerb.lastIndexOf(" by ");
+  if (splitAt2 <= 0) return null;
+  return { name: afterVerb.slice(0, splitAt2).trim(), artist: afterVerb.slice(splitAt2 + 4).trim(), album: "" };
 }
 
 function captureContextMenuTrackInfo(event) {

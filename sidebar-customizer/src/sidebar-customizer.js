@@ -18,34 +18,41 @@
         }
     };
     
+    // Translations helper — logs source (translations vs fallback) in dev, silent in prod
+    const t = process.env.NODE_ENV !== 'production'
+        ? (key, fallback) => {
+            const val = Spicetify?.Platform?.Translations?.[key];
+            console.log(`[SidebarCustomizer] t("${key}") → ${val !== undefined ? `"${val}" (translations)` : `"${fallback}" (fallback)`}`);
+            return val ?? fallback;
+        }
+        : (key, fallback) => Spicetify?.Platform?.Translations?.[key] ?? fallback;
+
     // Unified selectors object
     const SELECTORS = {
         FRIEND_ACTIVITY: {
-            LABEL: "Friend Activity",
-            get SELECTOR() { return `[aria-label="${this.LABEL}"]`; }
+            get LABEL() { return t('buddy-feed.listening-activity', 'Listening activity'); },
+            get SELECTOR() { return `[aria-label="${this.LABEL}"]`; },
         },
         WHATS_NEW: {
-            LABEL: "What's New",
-            get SELECTOR() { return `[aria-label="${this.LABEL}"]`; }
+            get LABEL() { return t('web-player.whats-new-feed.button-label', "What's New"); },
+            get SELECTOR() { return `[aria-label="${this.LABEL}"]`; },
         },
         QUEUE: {
-            LABEL: "Queue",
-            get SELECTOR() { return `button[aria-label="${this.LABEL}"]`; }
+            get LABEL() { return t('playback-control.queue', 'Queue'); },
+            get SELECTOR() { return `button[aria-label="${this.LABEL}"]`; },
         },
         CONNECT: {
-            LABEL: "Connect to a device",
-            get SELECTOR() { return `button[aria-label="${this.LABEL}"]`; }
+            get LABEL() { return t('playback-control.connect-picker', 'Connect to a device'); },
+            get SELECTOR() { return `button[aria-label="${this.LABEL}"]`; },
         },
         NPV: {
-            TEXT_LABEL: "Now playing view",
-            TEXT_LABEL_ALT: "Now Playing view",
+            get TEXT_LABEL() { return t('web-player.now-playing-view.label', 'Now playing view'); },
             CLOSE_ID: "PanelHeader_CloseButton",
             get ASIDE_SELECTOR() { return `aside[aria-label="${this.TEXT_LABEL}"]`; },
-            get ASIDE_SELECTOR_ALT() { return `aside[aria-label="${this.TEXT_LABEL_ALT}"]`; },
             WIDGET_SELECTOR: 'aside.main-nowPlayingView-nowPlayingWidget',
             CONTAINER_SELECTOR: '.now-playing-view-container',
             get CLOSE_BTN_SELECTOR() { return `div[data-testid='${this.CLOSE_ID}'] > button`; },
-            HIDE_BTN_SELECTOR: `button[aria-label="Hide Now Playing view"]`,
+            HIDE_BTN_SELECTOR: `button.main-nowPlayingView-headerCloseButton`,
             BTN_SELECTOR: `button[data-testid="control-button-npv"]`,
             get BTN_SELECTOR_ALT() { return `button[aria-label="${this.TEXT_LABEL}"]:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON})`; },
             BTN_RESTORE_FOCUS_SELECTOR: 'button[data-restore-focus-key="now_playing_view"]',
@@ -163,11 +170,12 @@
                 
                 // NPV hiding styles
                 if (!prefs.nowPlaying) {
+                    console.log(`[SidebarCustomizer] CSS hide NPV | aside selector: ${SELECTORS.NPV.ASIDE_SELECTOR} | found: ${!!document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR)} | btn: ${SELECTORS.NPV.BTN_SELECTOR} | btn found: ${!!document.querySelector(SELECTORS.NPV.BTN_SELECTOR)}`);
                     // Only target VERY SPECIFIC elements rather than general classes that might affect album art
                     cssContent += `
                         /* Target only the actual NPV panel/aside */
                         ${SELECTORS.NPV.ASIDE_SELECTOR}:not(${SELECTORS.PLAYBAR.NOW_PLAYING_WIDGET}), 
-                        ${SELECTORS.NPV.ASIDE_SELECTOR_ALT}:not(${SELECTORS.PLAYBAR.NOW_PLAYING_WIDGET}) {
+                        ${SELECTORS.NPV.ASIDE_SELECTOR}:not(${SELECTORS.PLAYBAR.NOW_PLAYING_WIDGET}) {
                             width: 0 !important;
                             height: 0 !important;
                             display: none !important;
@@ -219,8 +227,31 @@
                     `;
                 }
                 
+                // Button visibility via CSS (applies on element appearance, not just at call time)
+                if (!prefs.friendActivity) {
+                    const sel = SELECTORS.FRIEND_ACTIVITY.SELECTOR;
+                    console.log(`[SidebarCustomizer] CSS hide friendActivity | selector: ${sel} | found: ${!!document.querySelector(sel)}`);
+                    cssContent += `${sel} { display: none !important; }`;
+                }
+                if (!prefs.whatsNew) {
+                    const sel = SELECTORS.WHATS_NEW.SELECTOR;
+                    console.log(`[SidebarCustomizer] CSS hide whatsNew | selector: ${sel} | found: ${!!document.querySelector(sel)}`);
+                    cssContent += `${sel} { display: none !important; }`;
+                }
+                if (!prefs.queue) {
+                    const sel = SELECTORS.QUEUE.SELECTOR;
+                    console.log(`[SidebarCustomizer] CSS hide queue | selector: ${sel} | found: ${!!document.querySelector(sel)}`);
+                    cssContent += `${sel} { display: none !important; }`;
+                }
+                if (!prefs.connect) {
+                    const sel = SELECTORS.CONNECT.SELECTOR;
+                    console.log(`[SidebarCustomizer] CSS hide connect | selector: ${sel} | found: ${!!document.querySelector(sel)}`);
+                    cssContent += `${sel} { display: none !important; }`;
+                }
+
                 // Sidebar visibility
                 const shouldHideSidebar = !prefs.nowPlaying && !prefs.queue && !prefs.connect && !prefs.friendActivity && !prefs.whatsNew;
+                console.log(`[SidebarCustomizer] Sidebar collapse: ${shouldHideSidebar} | prefs: nowPlaying=${prefs.nowPlaying} queue=${prefs.queue} connect=${prefs.connect} friendActivity=${prefs.friendActivity} whatsNew=${prefs.whatsNew}`);
                 if (shouldHideSidebar) {
                     cssContent += `
                         ${SELECTORS.LAYOUT.RIGHT_SIDEBAR} {
@@ -267,42 +298,35 @@
     function applyPreferences(prefs = null) {
         const currentPrefs = prefs || utils.prefs.load();
 
-        // Friend Activity
-        const friendActivity = document.querySelector(SELECTORS.FRIEND_ACTIVITY.SELECTOR);
-        if (friendActivity) friendActivity.style.display = currentPrefs.friendActivity ? '' : 'none';
+        // Friend Activity, What's New, Queue, Connect — handled via CSS injection in createOrUpdateStyle()
 
-        // What's New
-        const whatsNew = document.querySelector(SELECTORS.WHATS_NEW.SELECTOR);
-        if (whatsNew) whatsNew.style.display = currentPrefs.whatsNew ? '' : 'none';
-
-        // Queue
-        const queue = document.querySelector(SELECTORS.QUEUE.SELECTOR);
-        if (queue) queue.style.display = currentPrefs.queue ? '' : 'none';
-        
-        // Connect
-        const connect = document.querySelector(SELECTORS.CONNECT.SELECTOR);
-        if (connect) connect.style.display = currentPrefs.connect ? '' : 'none';
-        
         // Now Playing
         const npvSelectors = [
             SELECTORS.NPV.ASIDE_SELECTOR,
-            SELECTORS.NPV.ASIDE_SELECTOR_ALT
+            SELECTORS.NPV.ASIDE_SELECTOR
         ];
         
         for (const selector of npvSelectors) {
             const el = document.querySelector(selector);
+            console.log(`[SidebarCustomizer] applyPreferences NPV | selector: ${selector} | found: ${!!el} | nowPlaying pref: ${currentPrefs.nowPlaying}`);
             if (!el) continue;
-            
+
             if (!currentPrefs.nowPlaying) {
                 // Try to click hide/close buttons first
                 const hideBtn = el.querySelector(SELECTORS.NPV.HIDE_BTN_SELECTOR);
                 if (hideBtn) {
+                    console.log(`[SidebarCustomizer] NPV: clicking hide btn (${SELECTORS.NPV.HIDE_BTN_SELECTOR})`);
                     hideBtn.click();
                 } else {
                     const closeBtn = el.querySelector(SELECTORS.NPV.CLOSE_BTN_SELECTOR);
-                    if (closeBtn) closeBtn.click();
+                    if (closeBtn) {
+                        console.log(`[SidebarCustomizer] NPV: clicking close btn (${SELECTORS.NPV.CLOSE_BTN_SELECTOR})`);
+                        closeBtn.click();
+                    } else {
+                        console.log(`[SidebarCustomizer] NPV: no hide/close btn found, forcing style hide`);
+                    }
                 }
-                
+
                 // Force hide with styles
                 el.style.visibility = 'hidden';
                 el.style.width = '0';
@@ -310,6 +334,7 @@
                 el.style.display = 'none';
                 el.classList.add(CONFIG.HIDDEN_NPV_CLASS);
             } else {
+                console.log(`[SidebarCustomizer] NPV: showing element`);
                 el.classList.remove(CONFIG.HIDDEN_NPV_CLASS);
                 el.style.visibility = '';
                 el.style.width = '';
@@ -341,7 +366,7 @@
         if (currentPrefs.nowPlaying && Spicetify?.Player?.data?.isPaused === false && npvButton) {
             setTimeout(() => {
                 const npvVisible = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                  document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR_ALT);
+                                  document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
                 if (!npvVisible && npvButton.style.display !== 'none') {
                     npvButton.click();
                 }
@@ -413,15 +438,16 @@
                 { name: SELECTORS.WHATS_NEW.LABEL, pref: "whatsNew" },
                 { name: SELECTORS.QUEUE.LABEL, pref: "queue" },
                 { name: SELECTORS.CONNECT.LABEL, pref: "connect" },
-                { name: SELECTORS.NPV.TEXT_LABEL_ALT, pref: "nowPlaying" },
+                { name: SELECTORS.NPV.TEXT_LABEL, pref: "nowPlaying" },
                 { name: "Album Art Handler", pref: "albumArtHandler" }
             ];
             
             items.forEach(item => submenuContainer.appendChild(createMenuItem(item, prefs)));
             
-            // Find position to insert (before Settings)
-            let settingsItem = Array.from(dropdownMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'))
-                .find(item => item.textContent?.trim() === 'Settings');
+            // Find position to insert (before the last menuitem group — use Settings link if present)
+            let settingsItem = Array.from(dropdownMenu.querySelectorAll('[role="menuitem"]'))
+                .find(item => item.closest('a[href*="preferences"], a[href*="settings"]') ||
+                              item.getAttribute('href')?.includes('preferences'));
                 
             let referenceNode = null;
             if (settingsItem) {
@@ -451,7 +477,7 @@
             // Check if NPV appeared and should be hidden
             if (!prefs.nowPlaying) {
                 const nowPlayingView = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                      document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR_ALT);
+                                      document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
                                       
                 if (nowPlayingView && !nowPlayingView.classList.contains(CONFIG.HIDDEN_NPV_CLASS)) {
                     setTimeout(() => {
@@ -487,9 +513,9 @@
             if (profileMenu) {
                 console.log('[SidebarCustomizer] Found a menu:', profileMenu);
                 // Only add submenu if this is the profile menu (check for 'Settings' item)
-                const menuItems = Array.from(profileMenu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'));
-                console.log('[SidebarCustomizer] Menu items:', menuItems.map(item => item.textContent?.trim()));
-                const hasSettings = menuItems.some(item => item.textContent?.trim() === 'Settings');
+                // Profile menu is identified by containing a menuitemcheckbox (Private Session toggle)
+                // This is language-independent unlike checking for "Settings" text
+                const hasSettings = !!profileMenu.querySelector('[role="menuitemcheckbox"]');
                 console.log('[SidebarCustomizer] Has Settings:', hasSettings);
                 if (hasSettings) {
                     const hasCustomMenu = profileMenu.querySelector(`#${SELECTORS.PROFILE.SUBMENU_ID}`);
@@ -545,8 +571,7 @@
                     
                     if (menu && !menu.querySelector(`#${SELECTORS.PROFILE.SUBMENU_ID}`)) {
                         // Verify this is the profile menu by checking for Settings
-                        const menuItems = Array.from(menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'));
-                        const hasSettings = menuItems.some(item => item.textContent?.trim() === 'Settings');
+                        const hasSettings = !!menu.querySelector('[role="menuitemcheckbox"]');
                         
                         if (hasSettings) {
                             console.log('[SidebarCustomizer] Adding submenu via profile button click');
@@ -570,7 +595,7 @@
                         const npvButton = document.querySelector(SELECTORS.NPV.BTN_SELECTOR) || 
                                          document.querySelector(SELECTORS.NPV.BTN_SELECTOR_ALT);
                         const npvVisible = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                          document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR_ALT);
+                                          document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
                                           
                         if (npvButton && !npvVisible && npvButton.style.display !== 'none') {
                             npvButton.click();
@@ -588,6 +613,21 @@
         try {
             console.log('[SidebarCustomizer] init() called');
             console.log('[SidebarCustomizer] Watching for menu selectors:', SELECTORS.PROFILE.DROPDOWN_MENU);
+            console.log('[SidebarCustomizer] Resolving selectors via translations:');
+            t('buddy-feed.listening-activity', 'Listening activity');
+            t('web-player.whats-new-feed.button-label', "What's New");
+            t('playback-control.queue', 'Queue');
+            t('playback-control.connect-picker', 'Connect to a device');
+            t('web-player.now-playing-view.label', 'Now playing view');
+            console.log('[SidebarCustomizer] Resolved selectors:', {
+                friendActivity: SELECTORS.FRIEND_ACTIVITY.SELECTOR,
+                whatsNew: SELECTORS.WHATS_NEW.SELECTOR,
+                queue: SELECTORS.QUEUE.SELECTOR,
+                connect: SELECTORS.CONNECT.SELECTOR,
+                npvAside: SELECTORS.NPV.ASIDE_SELECTOR,
+                npvBtn: SELECTORS.NPV.BTN_SELECTOR,
+                npvTextLabel: SELECTORS.NPV.TEXT_LABEL,
+            });
             
             // Wait for Spicetify
             let attempts = 0;
@@ -601,6 +641,8 @@
             utils.dom.createOrUpdateStyle();
             applyPreferences();
             setupEventListeners();
+            // Re-apply after Spotify's React finishes rendering playbar buttons
+            setTimeout(() => utils.dom.createOrUpdateStyle(), 1500);
             
             
             console.log("SidebarCustomizer: Initialized");

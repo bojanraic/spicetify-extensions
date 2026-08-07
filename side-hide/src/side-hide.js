@@ -1,13 +1,26 @@
-const SH_NOW_PLAYING_TEXT = "Now playing view";
 const SH_NOW_PLAYING_CLOSE_ID = "PanelHeader_CloseButton";
-const SH_NOW_PLAYING_ASIDE = `aside[aria-label="${SH_NOW_PLAYING_TEXT}"]`;
 const SH_NOW_PLAYING_ASIDE_CLOSE_BTN = `div[data-testid='${SH_NOW_PLAYING_CLOSE_ID}'] > button`;
-const SH_NOW_PLAYING_HIDE_BTN = `button[aria-label="Hide Now Playing view"]`;
 
-const SH_FRIEND_ACTIVITY_FEED_TEXT = "Friend Activity";
+// Translations helper — safe to call once Spicetify is loaded
+const sh_t = (key, fallback) => Spicetify?.Platform?.Translations?.[key] ?? fallback;
+
+// Built lazily inside hideSide() so Translations are available
+function sh_buildSelectors() {
+    const npvLabel = sh_t('web-player.now-playing-view.label', 'Now playing view');
+    const hideLabel = sh_t('web-player.now-playing-view.hide', 'Hide Now Playing view');
+    return {
+        // aside#Desktop_PanelContainer_Id is language-independent; Translations-based fallback
+        NOW_PLAYING_ASIDE: `aside#Desktop_PanelContainer_Id, aside[aria-label="${npvLabel}"]`,
+        // class from dwp-panel-section.js; Translations-based aria-label fallback
+        NOW_PLAYING_HIDE_BTN: `button.main-nowPlayingView-headerCloseButton, button[aria-label="${hideLabel}"]`,
+    };
+}
+
 const SH_SIDEBAR_CSS_SELECTORS = {
-  FRIENDS_ACTIVITY_BUTTON: `button.main-topBar-buddyFeed[aria-label='${SH_FRIEND_ACTIVITY_FEED_TEXT}']`,
-  NOW_PLAYING_BUTTON: `button.main-genericButton-button[aria-label='${SH_NOW_PLAYING_TEXT}']`,
+  // aria-label via Translations — data-testid is bundler-compressed in xpui.js
+  get FRIENDS_ACTIVITY_BUTTON() { return `[aria-label="${sh_t('buddy-feed.listening-activity', 'Listening activity')}"]`; },
+  // data-testid from dwp-now-playing-bar.js source (language-independent)
+  NOW_PLAYING_BUTTON: `button[data-testid="control-button-npv"]`,
 };
 
 const SH_RETRY_LIMIT = 30;
@@ -68,25 +81,28 @@ async function clickButtonIfExists(selector, parent = null, retryInterval = 50, 
 
 async function hideSide() {
   console.log("Side-Hide: Initializing...");
+  // Build selectors now that Spicetify.Platform.Translations is available
+  const { NOW_PLAYING_ASIDE, NOW_PLAYING_HIDE_BTN } = sh_buildSelectors();
+
   // Set up MutationObserver to detect and handle Now Playing view when it appears
   const observer = new MutationObserver(async (mutations) => {
     // Check if Now Playing view exists
-    const nowPlayingAside = document.querySelector(SH_NOW_PLAYING_ASIDE);
+    const nowPlayingAside = document.querySelector(NOW_PLAYING_ASIDE);
     if (nowPlayingAside) {
       console.log(`Side-Hide: Now Playing view detected by observer`);
-      
+
       // First, try to click the "Hide Now Playing view" button
-      const hideButtonClicked = await clickButtonIfExists(SH_NOW_PLAYING_HIDE_BTN, nowPlayingAside);
-      
+      const hideButtonClicked = await clickButtonIfExists(NOW_PLAYING_HIDE_BTN, nowPlayingAside);
+
       if (!hideButtonClicked) {
         // If the specific hide button wasn't found/clicked, try the close button
         console.log(`Side-Hide: Trying alternate close button`);
         await clickButtonIfExists(SH_NOW_PLAYING_ASIDE_CLOSE_BTN, nowPlayingAside);
       }
-      
+
       // After a short delay, hide the aside if it's still visible
       setTimeout(async () => {
-        const stillVisible = document.querySelector(SH_NOW_PLAYING_ASIDE);
+        const stillVisible = document.querySelector(NOW_PLAYING_ASIDE);
         if (stillVisible) {
           console.log(`Side-Hide: Now Playing view still visible after clicking buttons, forcing hide`);
           stillVisible.style.display = 'none';
@@ -94,7 +110,7 @@ async function hideSide() {
       }, 500);
     }
   });
-  
+
   // Start observing the document
   observer.observe(document.body, {
     childList: true,
@@ -102,17 +118,17 @@ async function hideSide() {
     attributes: true,
     attributeFilter: ['aria-label', 'class', 'style']
   });
-  
+
   console.log(`Side-Hide: Observer set up for Now Playing view`);
-  
+
   // Handle initial Now Playing view if it's already open
-  const nowPlayingAside = await getElement(SH_NOW_PLAYING_ASIDE);
+  const nowPlayingAside = await getElement(NOW_PLAYING_ASIDE);
   if (nowPlayingAside) {
     console.log(`Side-Hide: Now Playing aside element visible on initialization.`);
-    
+
     // First try the "Hide Now Playing view" button
-    const hideButtonClicked = await clickButtonIfExists(SH_NOW_PLAYING_HIDE_BTN, nowPlayingAside);
-    
+    const hideButtonClicked = await clickButtonIfExists(NOW_PLAYING_HIDE_BTN, nowPlayingAside);
+
     if (!hideButtonClicked) {
       // If the specific hide button wasn't found/clicked, try the close button
       console.log(`Side-Hide: Trying alternate close button on initialization`);
