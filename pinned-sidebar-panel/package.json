@@ -1,20 +1,36 @@
 {
   "name": "pinned-sidebar-panel",
-  "version": "2.0.0",
-  "private": true,
-  "type": "module",
-  "description": "Automatically restores a chosen sidebar panel after a timeout.",
+  "version": "1.0.0",
+  "description": "Spicetify extension to auto-restore a chosen sidebar panel.",
+  "main": "src/pinned-sidebar-panel.js",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "watch": "webpack --watch --config webpack.config.js",
+    "clean": "rm -rf ./dist",
+    "copy": "cp src/pinned-sidebar-panel.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/pinned-sidebar-panel.js `spicetify path userdata`/Extensions/pinned-sidebar-panel.js",
+    "deploy": "npm run copy && spicetify config extensions pinned-sidebar-panel.js && spicetify apply",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions pinned-sidebar-panel.js && spicetify apply",
+    "local": "npm run clean && npm run build && npm run deploy-dist",
+    "undeploy": "rm -f `spicetify path userdata`/Extensions/pinned-sidebar-panel.js && spicetify config extensions pinned-sidebar-panel.js- && spicetify apply"
+  },
+  "keywords": [
+    "spicetify",
+    "extension",
+    "spotify",
+    "sidebar",
+    "panel",
+    "auto-restore",
+    "pinned"
+  ],
   "author": "Bojan Raic",
   "license": "MIT",
-  "keywords": ["spicetify", "extension", "spotify", "sidebar", "panel", "auto-restore", "pinned"],
-  "scripts": {
-    "build": "NODE_ENV=production tsup",
-    "build:dev": "NODE_ENV=development tsup",
-    "watch": "NODE_ENV=development tsup --watch",
-    "typecheck": "tsc -p tsconfig.json",
-    "copy": "cp dist/pinned-sidebar-panel.js \"$(spicetify path userdata)/Extensions/pinned-sidebar-panel.js\"",
-    "deploy": "npm run build && npm run copy && spicetify config extensions pinned-sidebar-panel.js && spicetify apply",
-    "deploy:dev": "npm run build:dev && npm run copy && spicetify config extensions pinned-sidebar-panel.js && spicetify apply && spicetify enable-devtools",
-    "undeploy": "rm -f \"$(spicetify path userdata)/Extensions/pinned-sidebar-panel.js\" && spicetify config extensions pinned-sidebar-panel.js- && spicetify apply"
+  "devDependencies": {
+    "@babel/core": "^7.27.4",
+    "@babel/preset-env": "^7.27.2",
+    "babel-loader": "^10.0.0",
+    "clean-webpack-plugin": "^4.0.0",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
   }
 }

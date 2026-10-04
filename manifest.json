@@ -17,7 +17,7 @@
   },
   {
     "name": "Side Hide",
-    "description": "Hides the entire right sidebar (Listening Activity, What's New, Now Playing, Queue, Connect) and its action buttons",
+    "description": "Hides the sidebar (Friends Activity & Now Playing) and associated action buttons",
     "main": "side-hide/dist/side-hide.js",
     "preview": "side-hide/icon.png",
     "readme": "side-hide/README.md",
@@ -34,7 +34,7 @@
   },
   {
     "name": "YT Video",
-    "description": "Search and watch YouTube videos for Spotify songs without cookies or tracking",
+    "description": "Search and watch YouTube videos for Spotify songs without ads, cookies, or tracking",
     "main": "yt-video/dist/yt-video.js",
     "preview": "yt-video/icon.png",
     "readme": "yt-video/README.md",

@@ -14,12 +14,11 @@ Sesh-Stats tracks your Spotify listening statistics — both live session data a
 - Album art background with blur/color effect pulled from the current track
 - Click track name, artist, or album art to navigate directly to that page in Spotify
 
-### Session Stats
+### This Session Tab
 - Live playback time and session duration
 - Tracks started, finished/skipped, and unique tracks played (counts tracks listened to for 30+ seconds)
 
-### History (expandable)
-- Shown below the session stats — click to expand and grow the panel
+### History Tab
 - Persistent stats saved to `localStorage` — survives Spotify restarts
 - Filter by Last 7 days, Last 30 days, Last 90 days, or All time
 - Top Tracks, Top Artists, Top Albums with album art thumbnails

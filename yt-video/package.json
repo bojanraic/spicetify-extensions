@@ -1,17 +1,21 @@
 {
   "name": "yt-video",
-  "version": "2.0.0",
-  "private": true,
-  "type": "module",
-  "description": "Search and watch YouTube videos for Spotify songs without cookies or tracking.",
+  "version": "1.0.0",
+  "description": "Opens YouTube videos for Spotify songs without ads, cookies, or tracking",
+  "devDependencies": {
+    "clean-webpack-plugin": "^4.0.0",
+    "terser-webpack-plugin": "^5.3.10",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
+  },
   "scripts": {
-    "build": "NODE_ENV=production tsup",
-    "build:dev": "NODE_ENV=development tsup",
-    "watch": "NODE_ENV=development tsup --watch",
-    "typecheck": "tsc -p tsconfig.json",
-    "copy": "cp dist/yt-video.js \"$(spicetify path userdata)/Extensions/yt-video.js\"",
-    "deploy": "npm run build && npm run copy && spicetify config extensions yt-video.js && spicetify apply",
-    "deploy:dev": "npm run build:dev && npm run copy && spicetify config extensions yt-video.js && spicetify apply && spicetify enable-devtools",
-    "undeploy": "rm -f \"$(spicetify path userdata)/Extensions/yt-video.js\" && spicetify config extensions yt-video.js- && spicetify apply"
+    "build": "webpack --mode=production",
+    "clean": "rm -rf ./dist",
+    "copy": "cp src/yt-video.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/yt-video.js `spicetify path userdata`/Extensions/yt-video.js",
+    "deploy": "npm run copy && spicetify config extensions yt-video.js && spicetify apply && spicetify enable-devtools",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions yt-video.js && spicetify apply",
+    "local": "npm run clean && npm run build && npm run deploy",
+    "undeploy": "rm -rf `spicetify path userdata`/Extensions/yt-video.js && spicetify config extensions yt-video.js- && spicetify apply"
   }
-}
+} 

@@ -1,17 +1,22 @@
 {
-  "name": "sidebar-customizer",
-  "version": "2.0.0",
-  "private": true,
-  "type": "module",
-  "description": "Customize the visibility of right-hand sidebar elements (Listening Activity, Queue, Connect, Now Playing).",
+  "devDependencies": {
+    "@babel/preset-env": "^7.27.2",
+    "babel-loader": "^10.0.0",
+    "clean-webpack-plugin": "^4.0.0",
+    "terser-webpack-plugin": "^5.3.14",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
+  },
   "scripts": {
-    "build": "NODE_ENV=production tsup",
-    "build:dev": "NODE_ENV=development tsup",
-    "watch": "NODE_ENV=development tsup --watch",
-    "typecheck": "tsc -p tsconfig.json",
-    "copy": "cp dist/sidebar-customizer.js \"$(spicetify path userdata)/Extensions/sidebar-customizer.js\"",
-    "deploy": "npm run build && npm run copy && spicetify config extensions sidebar-customizer.js && spicetify apply",
-    "deploy:dev": "npm run build:dev && npm run copy && spicetify config extensions sidebar-customizer.js && spicetify apply && spicetify enable-devtools",
-    "undeploy": "rm -f \"$(spicetify path userdata)/Extensions/sidebar-customizer.js\" && spicetify config extensions sidebar-customizer.js- && spicetify apply"
+    "build": "webpack --mode=production",
+    "build-dev": "webpack --mode=development",
+    "deploy-dev": "npm run build-dev && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply",
+    "clean": "rm -rf ./dist",
+    "copy": "cp src/sidebar-customizer.js `spicetify path userdata`/Extensions",
+    "copy-dist": "cp dist/sidebar-customizer.js `spicetify path userdata`/Extensions/sidebar-customizer.js",
+    "deploy": "npm run copy && spicetify config extensions sidebar-customizer.js && spicetify apply && spicetify enable-devtools",
+    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply",
+    "local": "npm run clean && npm run build && npm run deploy",
+    "undeploy": "rm -rf `spicetify path userdata`/Extensions/sidebar-customizer.js && spicetify config extensions sidebar-customizer.js- && spicetify apply"
   }
 }
