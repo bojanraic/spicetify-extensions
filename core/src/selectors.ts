@@ -18,6 +18,7 @@ export const labels = {
   connect: () => t('playback-control.connect-picker', 'Connect to a device'),
   nowPlayingView: () => t('web-player.now-playing-view.label', 'Now playing view'),
   nowPlayingHide: () => t('web-player.now-playing-view.hide', 'Hide Now Playing view'),
+  nowPlayingShow: () => t('web-player.cinema-mode.peek.show.now-playing-view', 'Show Now Playing view'),
 };
 
 /**
@@ -39,6 +40,8 @@ export const panelSelectors = {
   nowPlayingButtonByLabel: () => `button[aria-label="${labels.nowPlayingView()}"]`,
   nowPlayingRestoreFocus: 'button[data-restore-focus-key="now_playing_view"]',
   nowPlayingAside: () => `aside[aria-label="${labels.nowPlayingView()}"]`,
+  // Expander on the collapsed right-sidebar strip; visible only while the NPV is closed.
+  nowPlayingExpandButton: () => `button[aria-label="${labels.nowPlayingShow()}"]`,
   // Exclusion guards: the playbar mini-widget and cover-art button share
   // labels/ancestry with the NPV panel and must NOT be caught by hide rules.
   nowPlayingWidget: '[data-testid="now-playing-widget"]',

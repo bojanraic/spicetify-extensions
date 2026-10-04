@@ -106,7 +106,7 @@ function applyStyles(prefs: Prefs): void {
 }
 
 // --- Preference application (imperative NPV open/close on top of CSS) ---
-function applyPreferences(prefs: Prefs = prefsStore.load()): void {
+function applyPreferences(prefs: Prefs = prefsStore.load(), userInitiated = false): void {
   applyStyles(prefs);
 
   const aside = document.querySelector<HTMLElement>(panelSelectors.nowPlayingAside());
@@ -121,16 +121,50 @@ function applyPreferences(prefs: Prefs = prefsStore.load()): void {
     }
   }
 
-  // Auto-open NPV when enabled and playback is active.
-  if (prefs.nowPlaying && Spicetify?.Player?.data?.isPaused === false) {
+  scheduleOpenNpv(userInitiated);
+}
+
+// Spotify keeps the NPV <aside> mounted while the panel is closed, so its
+// presence says nothing about open/closed. The collapsed strip's expander is
+// visible only while the NPV is closed.
+function npvExpander(): HTMLElement | null {
+  const el = document.querySelector<HTMLElement>(panelSelectors.nowPlayingExpandButton());
+  return el && el.getBoundingClientRect().width > 0 ? el : null;
+}
+
+// Open the NPV when enabled. Startup and play/pause only open it while playing;
+// an explicit toggle in the menu opens it regardless. State is re-read when the
+// timer fires so a toggle in between can't leave a stale click behind, and a
+// single pending timer keeps rapid toggling from clicking more than once.
+let openNpvTimer: ReturnType<typeof setTimeout> | undefined;
+let openNpvForced = false;
+
+// Player.data is not populated on every Spicetify build; isPlaying() is.
+function isPlaying(): boolean {
+  return Spicetify?.Player?.isPlaying?.() ?? Spicetify?.Player?.data?.isPaused === false;
+}
+
+function scheduleOpenNpv(userInitiated = false): void {
+  clearTimeout(openNpvTimer);
+  openNpvForced ||= userInitiated;
+  openNpvTimer = setTimeout(() => {
+    const forced = openNpvForced;
+    openNpvForced = false;
+    if (!prefsStore.load().nowPlaying || (!forced && !isPlaying())) return;
+
+    const expander = npvExpander();
+    if (expander) {
+      expander.click();
+      return;
+    }
+
+    // Layouts without the collapsed-strip expander: fall back to the playbar toggle.
     const button =
       document.querySelector<HTMLElement>(panelSelectors.nowPlayingButton) ??
       document.querySelector<HTMLElement>(panelSelectors.nowPlayingButtonByLabel());
     const open = document.querySelector(panelSelectors.nowPlayingAside());
-    if (button && !open && button.style.display !== 'none') {
-      setTimeout(() => button.click(), 200);
-    }
-  }
+    if (button && !open && button.style.display !== 'none') button.click();
+  }, 200);
 }
 
 // --- Profile submenu ---
@@ -156,7 +190,7 @@ function createProfileToggle(entry: ReturnType<typeof menuEntries>[number], pref
     const current = prefsStore.load();
     current[entry.pref] = !current[entry.pref];
     prefsStore.save(current);
-    applyPreferences(current);
+    applyPreferences(current, true);
     checkbox.innerHTML = toggleSwitch(current[entry.pref]);
     row.setAttribute('aria-checked', String(current[entry.pref]));
   });
@@ -211,18 +245,7 @@ function setupListeners(): void {
   );
 
   // Re-open NPV on play when enabled.
-  Spicetify?.Player?.addEventListener?.('onplaypause', () => {
-    setTimeout(() => {
-      const prefs = prefsStore.load();
-      if (prefs.nowPlaying && Spicetify.Player?.data?.isPaused === false) {
-        const button =
-          document.querySelector<HTMLElement>(panelSelectors.nowPlayingButton) ??
-          document.querySelector<HTMLElement>(panelSelectors.nowPlayingButtonByLabel());
-        const open = document.querySelector(panelSelectors.nowPlayingAside());
-        if (button && !open && button.style.display !== 'none') button.click();
-      }
-    }, 200);
-  });
+  Spicetify?.Player?.addEventListener?.('onplaypause', () => scheduleOpenNpv());
 }
 
 // --- Init ---
