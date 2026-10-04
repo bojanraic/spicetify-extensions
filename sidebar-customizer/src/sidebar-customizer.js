@@ -56,9 +56,15 @@
             BTN_SELECTOR: `button[data-testid="control-button-npv"]`,
             get BTN_SELECTOR_ALT() { return `button[aria-label="${this.TEXT_LABEL}"]:not(${SELECTORS.PLAYBAR.COVER_ART_BUTTON})`; },
             BTN_RESTORE_FOCUS_SELECTOR: 'button[data-restore-focus-key="now_playing_view"]',
+            // Expander on the collapsed right-sidebar strip; visible only while the NPV is closed.
+            get SHOW_LABEL() { return t('web-player.cinema-mode.peek.show.now-playing-view', 'Show Now Playing view'); },
+            get EXPAND_BTN_SELECTOR() { return `button[aria-label="${this.SHOW_LABEL}"]`; },
         },
         LAYOUT: {
             RIGHT_SIDEBAR: '.Root__right-sidebar',
+            // Newer Spotify builds use hashed class names; the panel (including its
+            // expand arrow) is the plain div right after #main-view.
+            RIGHT_SIDEBAR_PANEL: '.Root__right-sidebar, .Root__top-container > #main-view + div',
             MAIN_VIEW: '.Root__main-view',
         },
         PROFILE: {
@@ -254,7 +260,7 @@
                 console.log(`[SidebarCustomizer] Sidebar collapse: ${shouldHideSidebar} | prefs: nowPlaying=${prefs.nowPlaying} queue=${prefs.queue} connect=${prefs.connect} friendActivity=${prefs.friendActivity} whatsNew=${prefs.whatsNew}`);
                 if (shouldHideSidebar) {
                     cssContent += `
-                        ${SELECTORS.LAYOUT.RIGHT_SIDEBAR} {
+                        ${SELECTORS.LAYOUT.RIGHT_SIDEBAR_PANEL} {
                             width: 0 !important;
                             min-width: 0 !important;
                             max-width: 0 !important;
@@ -295,7 +301,7 @@
     };
 
     // --- Element Control Functions ---
-    function applyPreferences(prefs = null) {
+    function applyPreferences(prefs = null, userInitiated = false) {
         const currentPrefs = prefs || utils.prefs.load();
 
         // Friend Activity, What's New, Queue, Connect — handled via CSS injection in createOrUpdateStyle()
@@ -362,16 +368,48 @@
         // Update styles
         utils.dom.createOrUpdateStyle();
         
-        // Auto-show NPV if enabled and music is playing
-        if (currentPrefs.nowPlaying && Spicetify?.Player?.data?.isPaused === false && npvButton) {
-            setTimeout(() => {
-                const npvVisible = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                  document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
-                if (!npvVisible && npvButton.style.display !== 'none') {
-                    npvButton.click();
-                }
-            }, 200);
-        }
+        scheduleOpenNpv(userInitiated);
+    }
+
+    // Spotify keeps the NPV <aside> mounted while the panel is closed, so its
+    // presence says nothing about open/closed. The collapsed strip's expander is
+    // visible only while the NPV is closed.
+    function npvExpander() {
+        const el = document.querySelector(SELECTORS.NPV.EXPAND_BTN_SELECTOR);
+        return el && el.getBoundingClientRect().width > 0 ? el : null;
+    }
+
+    // Player.data is not populated on every Spicetify build; isPlaying() is.
+    function isPlaying() {
+        return Spicetify?.Player?.isPlaying?.() ?? Spicetify?.Player?.data?.isPaused === false;
+    }
+
+    // Open the NPV when enabled. Startup and play/pause only open it while playing;
+    // an explicit toggle in the menu opens it regardless. State is re-read when the
+    // timer fires so a toggle in between can't leave a stale click behind, and a
+    // single pending timer keeps rapid toggling from clicking more than once.
+    let openNpvTimer;
+    let openNpvForced = false;
+    function scheduleOpenNpv(userInitiated = false) {
+        clearTimeout(openNpvTimer);
+        openNpvForced = openNpvForced || userInitiated;
+        openNpvTimer = setTimeout(() => {
+            const forced = openNpvForced;
+            openNpvForced = false;
+            if (!utils.prefs.load().nowPlaying || (!forced && !isPlaying())) return;
+
+            const expander = npvExpander();
+            if (expander) {
+                expander.click();
+                return;
+            }
+
+            // Layouts without the collapsed-strip expander: fall back to the playbar toggle.
+            const button = document.querySelector(SELECTORS.NPV.BTN_SELECTOR) ||
+                           document.querySelector(SELECTORS.NPV.BTN_SELECTOR_ALT);
+            const open = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
+            if (button && !open && button.style.display !== 'none') button.click();
+        }, 200);
     }
 
     // --- UI Components ---
@@ -401,7 +439,7 @@
             const currentPrefs = utils.prefs.load();
             currentPrefs[item.pref] = !currentPrefs[item.pref];
             utils.prefs.save(currentPrefs);
-            applyPreferences(currentPrefs);
+            applyPreferences(currentPrefs, true);
             checkbox.innerHTML = utils.dom.createToggleSwitch(currentPrefs[item.pref]);
             checkbox.title = currentPrefs[item.pref] ? `Click to hide ${item.name}` : `Click to show ${item.name}`;
         });
@@ -588,21 +626,7 @@
         
         // Player events
         if (Spicetify?.Player) {
-            Spicetify.Player.addEventListener("onplaypause", () => {
-                setTimeout(() => {
-                    const prefs = utils.prefs.load();
-                    if (prefs.nowPlaying && Spicetify.Player?.data?.isPaused === false) {
-                        const npvButton = document.querySelector(SELECTORS.NPV.BTN_SELECTOR) || 
-                                         document.querySelector(SELECTORS.NPV.BTN_SELECTOR_ALT);
-                        const npvVisible = document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR) || 
-                                          document.querySelector(SELECTORS.NPV.ASIDE_SELECTOR);
-                                          
-                        if (npvButton && !npvVisible && npvButton.style.display !== 'none') {
-                            npvButton.click();
-                        }
-                    }
-                }, 200);
-            });
+            Spicetify.Player.addEventListener("onplaypause", () => scheduleOpenNpv());
         }
         
         return observer;
