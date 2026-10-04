@@ -11,7 +11,7 @@ Spicetify YT-Video is a Spicetify extension that adds a YouTube button to the pl
 - Videos play directly in the overlay using the embed player for enhanced privacy.
 - Navigate through search results or played videos with back and forward buttons.
 - If a video has embedding restrictions, you can open it directly on YouTube via a button in the search bar.
-- Settings allow toggling API key usage, showing/hiding thumbnails, and autoplay.
+- Settings let you set your YouTube API key and toggle thumbnails and autoplay.
 - A help button ("?") in the search bar displays available keyboard shortcuts.
 
 ## Keyboard Shortcuts
@@ -25,15 +25,14 @@ The following keyboard shortcuts are available when the extension is active:
 -   **Alt/Option + Left Arrow**: Navigate to the previous video in the search results (when a video is playing).
 -   **Alt/Option + Right Arrow**: Navigate to the next video in the search results (when a video is playing).
 
-## Important Note
+## YouTube API Key (required)
 
-**A YouTube API Key is recommended for the best experience.** Without an API key, the extension will still work but with limited search functionality (using an embedded search playlist which may have ads or different results).
+**A YouTube Data API key is required.** YouTube no longer permits anonymous search calls, so search does not work without one. If no key is set, YT-Video opens its Settings automatically and prompts you for it.
 
 To set up your API key:
 1.  [Get a YouTube API key](https://developers.google.com/youtube/v3/getting-started)
-2.  Open the YT-Video interface (e.g., by clicking the YouTube button or using Ctrl/Cmd + Y).
-3.  Click the "Settings" button in the overlay's search bar.
-4.  Enter your API key and enable "Use YouTube API Key".
+2.  Open YT-Video Settings (it opens automatically on first run — or click the YouTube button / press Ctrl/Cmd + Y, then "Settings").
+3.  Paste your API key and click "Save Settings".
 
 ## Screenshots
 

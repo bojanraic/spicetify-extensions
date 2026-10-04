@@ -61,7 +61,7 @@ When Focus Mode is active, the following keyboard shortcuts are available:
 
 ![Focus-Mode Lyrics Screenshot](03_screenshot_lyrics.png)
 
-*Lyrics (via `lyrics-plus`); toggled with `L` keyboard shortcutnp.*
+*Lyrics (via `lyrics-plus`); toggled with the `L` keyboard shortcut.*
 
 ##  More
 Like it? Star it!    

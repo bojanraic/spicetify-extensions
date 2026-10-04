@@ -1,18 +1,17 @@
 {
-  "devDependencies": {
-    "clean-webpack-plugin": "^4.0.0",
-    "terser-webpack-plugin": "^5.3.14",
-    "webpack": "^5.99.9",
-    "webpack-cli": "^6.0.1"
-  },
+  "name": "side-hide",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hides the entire right sidebar (Listening Activity, What's New, Now Playing, Queue, Connect) and its action buttons.",
   "scripts": {
-    "build": "webpack --mode=production",
-    "clean": "rm -rf ./dist",
-    "copy": "cp src/side-hide.js `spicetify path userdata`/Extensions",
-    "copy-dist": "cp dist/side-hide.js `spicetify path userdata`/Extensions/side-hide.js",
-    "deploy": "npm run copy && spicetify config extensions side-hide.js && spicetify apply && spicetify enable-devtools",
-    "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions side-hide.js && spicetify apply",
-    "local": "npm run clean && npm run build && npm run deploy",
-    "undeploy": "rm -rf `spicetify path userdata`/Extensions/side-hide.js && spicetify config extensions side-hide.js- && spicetify apply"
+    "build": "NODE_ENV=production tsup",
+    "build:dev": "NODE_ENV=development tsup",
+    "watch": "NODE_ENV=development tsup --watch",
+    "typecheck": "tsc -p tsconfig.json",
+    "copy": "cp dist/side-hide.js \"$(spicetify path userdata)/Extensions/side-hide.js\"",
+    "deploy": "npm run build && npm run copy && spicetify config extensions side-hide.js && spicetify apply",
+    "deploy:dev": "npm run build:dev && npm run copy && spicetify config extensions side-hide.js && spicetify apply && spicetify enable-devtools",
+    "undeploy": "rm -f \"$(spicetify path userdata)/Extensions/side-hide.js\" && spicetify config extensions side-hide.js- && spicetify apply"
   }
 }

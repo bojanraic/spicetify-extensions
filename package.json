@@ -1,0 +1,31 @@
+{
+  "name": "spicetify-extensions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bojan Raic's Spicetify extensions (TypeScript monorepo).",
+  "license": "MIT",
+  "workspaces": [
+    "core",
+    "private-session",
+    "side-hide",
+    "sidebar-customizer",
+    "pinned-sidebar-panel",
+    "focus-mode",
+    "sesh-stats",
+    "yt-video"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "build:dev": "npm run build:dev --workspaces --if-present",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}

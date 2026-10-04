@@ -7,7 +7,7 @@ Private Session (PS) is a simple Spicetify extension that will always enable pri
 
 ## [Side-Hide](./side-hide/README.md)
 
-Side Hide (SH) is a simple Spicetify extension that hides the Spotify Now Playing and Friend Activity Views in the sidebar and associated buttons. Queue and Connect functionality is unchanged. *(For more flexibility, see [SidebarCustomizer](#sidebarcustomizer) below)*
+Side Hide (SH) is a simple Spicetify extension that hides the entire right-hand sidebar (Listening Activity, What's New, Now Playing, Queue, Connect) and its associated buttons. *(For individual control of each element, see [SidebarCustomizer](#sidebarcustomizer) below)*
 
 ## [YT-Video](./yt-video/README.md)
 
@@ -24,8 +24,8 @@ Focus-Mode is a Spicetify extension that creates a distraction-free listening ex
 
 ## [SidebarCustomizer](./sidebar-customizer/README.md)
 
-Sidebar Customizer allows customizing the visibility of right-hand sidebar elements (Friend Activity, Queue, Connect, Now Playing View) via a profile menu toggle. **Recommended over Side-Hide** as it offers individual control of each sidebar element rather than an all-or-nothing approach. 
+Sidebar Customizer allows customizing the visibility of right-hand sidebar elements (Listening Activity, Queue, Connect, Now Playing View) via a profile menu toggle. **Recommended over Side-Hide** as it offers individual control of each sidebar element rather than an all-or-nothing approach. 
 
 ## [Pinned Sidebar Panel](./pinned-sidebar-panel/README.md)
 
-Pinned Sidebar Panel (PSP) automatically restores your chosen right-hand sidebar panel (e.g., Friend Activity, Queue) after a configurable timeout if another panel (like the Queue or Connect to a device modal) temporarily takes its place or is closed. 
+Pinned Sidebar Panel (PSP) automatically restores your chosen right-hand sidebar panel (e.g., Listening Activity, Queue) after a configurable timeout if another panel (like the Queue or Connect to a device modal) temporarily takes its place or is closed. 

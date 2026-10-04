@@ -1,11 +1,11 @@
-# Sidebar Customizer (SBC)
+# Spicetify Sidebar Customizer
 
 Spicetify extension to toggle the visibility of right-hand sidebar elements.
 
 ## Features
 
-*   Provides a submenu in the profile dropdown to individually toggle visibility of elements that affect the right-hand sidebar:
-    -   Friend Activity icon (top bar)
+*   Provides direct toggle rows in the profile dropdown to individually control elements that affect the right-hand sidebar:
+    -   Listening Activity icon (top bar)
     -   Queue icon (play bar)
     -   Connect to a device (play bar)
     -   Now Playing View (NPV) (play bar)
@@ -20,8 +20,8 @@ Spicetify extension to toggle the visibility of right-hand sidebar elements.
 
 1.  Install via Marketplace and reload Spotify
 2.  Click on your profile picture/name in the top-right corner.
-3.  Find the "Sidebar Customizer" submenu.
-4.  Click on an item to toggle its visibility (Green Check = Visible, Red X = Hidden).
+3.  Find the Sidebar Customizer rows grouped above Settings.
+4.  Click an item to toggle its visibility (Green Check = Visible, Red X = Hidden).
 
 ## Screenshot
 
