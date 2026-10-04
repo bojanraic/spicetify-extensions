@@ -48,6 +48,9 @@ export const panelSelectors = {
 /** Layout containers for collapsing the right sidebar and reclaiming space. */
 export const layoutSelectors = {
   rightSidebar: '.Root__right-sidebar',
+  // Newer Spotify builds use hashed class names with no stable id; the panel
+  // (including its expand arrow) is the plain div right after #main-view.
+  rightSidebarPanel: '.Root__right-sidebar, .Root__top-container > #main-view + div',
   mainView: '.Root__main-view',
 };
 
@@ -92,7 +95,7 @@ export function hideAllSidebarButtonsCss(): string {
 export function collapseRightSidebarCss(): string {
   const l = layoutSelectors;
   return [
-    `${l.rightSidebar} { width: 0 !important; min-width: 0 !important; max-width: 0 !important; overflow: hidden !important; visibility: hidden !important; display: none !important; }`,
+    `${l.rightSidebarPanel} { width: 0 !important; min-width: 0 !important; max-width: 0 !important; overflow: hidden !important; visibility: hidden !important; display: none !important; }`,
     `${l.mainView} { margin-right: 0 !important; }`,
   ].join('\n');
 }
