@@ -54,12 +54,14 @@
             },
         },
         LAYOUT: {
-            RIGHT_SIDEBAR: '.Root__right-sidebar',
-            MAIN_VIEW: '.Root__main-view',
+            // Spotify hashes layout classes; #main-view and its adjacent panel
+            // remain stable across the current and legacy layouts.
+            RIGHT_SIDEBAR: '.Root__right-sidebar, #main-view + div',
+            MAIN_VIEW: '#main-view, .Root__main-view',
         },
         PROFILE: { // Needed for adding the settings menu
             BUTTON: ".main-userWidget-box",
-            DROPDOWN_MENU: ".main-contextMenu-menu",
+            DROPDOWN_MENU: "ul.main-contextMenu-menu, [role='menu'], ul[role='menu']",
             SUBMENU_ID: "persistent-sidebar-panel-submenu", // Unique ID
             SUBMENU_BUTTON_CLASS: "main-contextMenu-menuItemButton",
             SUBMENU_CHECKBOX_CLASS: "persistent-sidebar-panel-checkbox", // Unique class if needed
@@ -418,8 +420,7 @@
         }
         const observerCallback = () => handleSidebarPanelChange();
         activePanelObserver = new MutationObserver(observerCallback);
-        const mainContent = mainView.querySelector('.main-view-container > .os-content');
-        if (mainContent) activePanelObserver.observe(mainContent, { childList: true, subtree: true });
+        activePanelObserver.observe(mainView, { childList: true, subtree: true });
         activePanelObserver.observe(rightSidebar, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden', 'aria-selected'] });
         handleSidebarPanelChange(); // Initial check
     }
@@ -741,7 +742,7 @@
         
         while (Date.now() - startTime < timeoutMs) {
             // Check if key sidebar elements are present
-            const rightSidebar = document.querySelector('.Root__right-sidebar, [class*="right-sidebar"]');
+            const rightSidebar = document.querySelector(SELECTORS.LAYOUT.RIGHT_SIDEBAR);
             const hasAnyPanelActivator = document.querySelector(SELECTORS.FRIEND_ACTIVITY.ACTIVATOR_SELECTOR) ||
                                         document.querySelector(SELECTORS.QUEUE.ACTIVATOR_SELECTOR) ||
                                         document.querySelector(SELECTORS.CONNECT.ACTIVATOR_SELECTOR);

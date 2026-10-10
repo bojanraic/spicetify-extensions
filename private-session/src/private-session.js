@@ -113,13 +113,23 @@ function createMenuButton() {
   return button;
 }
 
+function directMenuChild(element, menuList) {
+  let item = element;
+  while (item?.parentElement && item.parentElement !== menuList) {
+    item = item.parentElement;
+  }
+  return item?.parentElement === menuList ? item : null;
+}
+
 function addPersistentPrivacyItem(menuList) {
-  // Find the Private Session list item via role (language-independent)
+  // Spotify has used both <li> and <div> wrappers around menu checkboxes.
   const checkboxItem = menuList.querySelector('[role="menuitemcheckbox"]');
-  const privateSessionItem = checkboxItem?.closest("li");
+  const privateSessionItem = directMenuChild(checkboxItem, menuList);
   if (!privateSessionItem) return null;
 
-  const menuItem = document.createElement("li");
+  const reusableTag = ['LI', 'DIV'].includes(privateSessionItem.tagName);
+  const wrapperTag = reusableTag ? privateSessionItem.tagName.toLowerCase() : (menuList.tagName === 'UL' ? 'li' : 'div');
+  const menuItem = document.createElement(wrapperTag);
   menuItem.id = PS_PERSISTENT_ITEM_ID;
   menuItem.className = privateSessionItem.className;
   menuItem.appendChild(createMenuButton());
@@ -139,9 +149,9 @@ function ensurePersistentMenuItem(menuList) {
   const existing = menuList.querySelector(`#${PS_PERSISTENT_ITEM_ID}`);
   if (existing) {
     updatePersistentMenuItemToggle(menuList);
-  } else {
-    addPersistentPrivacyItem(menuList);
+    return existing;
   }
+  return addPersistentPrivacyItem(menuList);
 }
 
 // --- Menu Observer ---
@@ -169,9 +179,8 @@ function setupMenuObserver() {
           if (node.nodeType !== 1) continue;
           const menuList = findMenuInNode(node);
           if (menuList && isProfileMenu(menuList)) {
-            ensurePersistentMenuItem(menuList);
-            menuItemAdded = true;
-            break;
+            menuItemAdded = !!ensurePersistentMenuItem(menuList);
+            if (menuItemAdded) break;
           }
         }
       }

@@ -62,9 +62,9 @@
         },
         LAYOUT: {
             RIGHT_SIDEBAR: '.Root__right-sidebar',
-            // Newer Spotify builds use hashed class names; the panel (including its
-            // expand arrow) is the plain div right after #main-view.
-            RIGHT_SIDEBAR_PANEL: '.Root__right-sidebar, .Root__top-container > #main-view + div',
+            // Spotify hashes the panel and root-container classes. Anchor to the
+            // stable #main-view id and its adjacent right-panel sibling instead.
+            RIGHT_SIDEBAR_PANEL: '.Root__right-sidebar, #main-view + div',
             MAIN_VIEW: '.Root__main-view',
         },
         PROFILE: {

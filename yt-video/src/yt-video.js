@@ -6,7 +6,6 @@ const YTV_BUTTON_TOOLTIP = "Watch on YouTube (Ad-Free)";
 const YTV_CONTEXT_MENU_ITEM = "Play video";
 
 // CSS/DOM constants
-const YTV_BUTTON_CLASS = "ytv-button";
 const YTV_BUTTON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
   <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
 </svg>`;
@@ -15,10 +14,8 @@ const YTV_CONTEXT_MENU_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 </svg>`;
 
 // Configuration constants
-const YTV_RETRY_LIMIT = 5;
 const YTV_DELAY_MS = 120;
 const YTV_NOCOOKIE_DOMAIN = "www.youtube-nocookie.com";
-const YTV_BUTTON_COLOR = "#FF0000"; // YouTube red color
 const YTV_SETTINGS_KEY = "yt-video:settings";
 const YTV_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Spicetify loads
 const YTV_MUSIC_VIDEO_SEARCH_SUFFIX = "music video";
@@ -45,77 +42,11 @@ const YTV_DEFAULT_SETTINGS = {
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
 const ytvRateLimitedUntilByUri = new Map();
 let ytvLastContextMenuActionAt = 0;
-let ytvLastContextTrackInfo = null;
-
+let ytvPlaybarButton = null;
 function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
   Spicetify.showNotification(message, false, durationMs);
 }
 
-// Extract track info from a track list row using stable class selectors (language-independent)
-function extractTrackInfoFromRow(element) {
-  const row = element?.closest?.('[role="row"], [role="listitem"], [data-testid="tracklist-row"]');
-  if (!row) return null;
-  const name = row.querySelector('.main-trackInfo-name')?.textContent?.trim();
-  const artist = row.querySelector('.main-trackInfo-artists')?.textContent?.trim();
-  if (name && artist) return { name, artist, album: "" };
-  return null;
-}
-
-function extractTrackInfoFromPlayButtonAria(scope) {
-  if (!(scope instanceof Element)) return null;
-  // Try row-based extraction first (language-independent)
-  const rowInfo = extractTrackInfoFromRow(scope);
-  if (rowInfo) return rowInfo;
-  // Fallback: parse aria-label "Play [track] by [artist]" — English Spotify only
-  const button = scope.matches?.(".main-trackList-rowImagePlayButton")
-    ? scope
-    : scope.querySelector(".main-trackList-rowImagePlayButton");
-  const label = button?.getAttribute("aria-label") || "";
-  if (!label.includes(" by ")) return null;
-  const afterPlay = label.replace(/^[^"]*?\s/, ""); // strip leading verb
-  const splitAt = afterPlay.lastIndexOf(" by ");
-  if (splitAt <= 0) return null;
-  return { name: afterPlay.slice(0, splitAt).trim(), artist: afterPlay.slice(splitAt + 4).trim(), album: "" };
-}
-
-function extractTrackInfoFromAriaLabel(target) {
-  if (!(target instanceof Element)) return null;
-  // Try row-based extraction first (language-independent)
-  const rowInfo = extractTrackInfoFromRow(target);
-  if (rowInfo) return rowInfo;
-  const playInfo = extractTrackInfoFromPlayButtonAria(target.closest('[role="row"]') || target);
-  if (playInfo) return playInfo;
-  // Fallback: parse aria-label "More options for [track] by [artist]" — English Spotify only
-  const labelled = target.closest("[aria-label]");
-  const label = labelled?.getAttribute("aria-label") || "";
-  if (!label.includes(" by ")) return null;
-  const splitAt = label.lastIndexOf(" by ");
-  const afterVerb = label.replace(/^[^"]*?\s/, "");
-  const splitAt2 = afterVerb.lastIndexOf(" by ");
-  if (splitAt2 <= 0) return null;
-  return { name: afterVerb.slice(0, splitAt2).trim(), artist: afterVerb.slice(splitAt2 + 4).trim(), album: "" };
-}
-
-function captureContextMenuTrackInfo(event) {
-  try {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
-    const trackInfo = extractTrackInfoFromAriaLabel(target);
-    if (!trackInfo) return;
-    ytvLastContextTrackInfo = { timestamp: Date.now(), trackInfo };
-  } catch (error) {
-    console.debug("YT-Video: Failed to capture contextmenu track info:", error);
-  }
-}
-
-function getRecentLastContextTrackInfo() {
-  if (!ytvLastContextTrackInfo) return null;
-  if (Date.now() - ytvLastContextTrackInfo.timestamp > YTV_CONTEXT_LAST_TRACK_INFO_TTL_MS) {
-    ytvLastContextTrackInfo = null;
-    return null;
-  }
-  return ytvLastContextTrackInfo.trackInfo;
-}
 
 // Use window object for persistent registration flag to prevent duplicates on reload
 const getContextMenuRegisteredFlag = () => {
@@ -158,52 +89,16 @@ const showVideoPlayer = (videoId, videoIndex = 0, videoList = []) => {
     searchBar.style.display = "none";
   }
 
-  // Hide the modal title
-  const modalHeader = document.querySelector('.main-trackCreditsModal-header');
-  if (modalHeader) {
-    modalHeader.style.display = "none";
-  }
 
   const contentContainer = document.getElementById("ytv-content");
-  // Adjust the content container to take full height
   contentContainer.style.height = "100%";
+  const returnToSearch = () => {
+    window.ytvCurrentState = null;
+    if (searchBar) searchBar.style.display = "flex";
+    contentContainer.style.height = "calc(100% - 56px)";
+    performSearch();
+  };
 
-  // Find the modal container and adjust its content area
-  const modalContainer = document.querySelector('.GenericModal');
-  if (modalContainer) {
-    // Remove any padding or margins
-    modalContainer.style.padding = "0";
-    modalContainer.style.margin = "0";
-
-    const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-    if (contentSection) {
-      contentSection.style.height = "100%";
-      contentSection.style.maxHeight = "100%";
-      contentSection.style.overflow = "hidden";
-      contentSection.style.padding = "0";
-      contentSection.style.margin = "0";
-    }
-
-    // Remove any padding from the inner container
-    const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-    if (innerContainer) {
-      innerContainer.style.padding = "0";
-      innerContainer.style.margin = "0";
-    }
-
-    // Remove any padding from the credits container
-    const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-    if (creditsContainer) {
-      creditsContainer.style.padding = "0";
-      creditsContainer.style.margin = "0";
-    }
-
-    // Adjust the modal overlay to ensure it's full screen
-    const modalOverlay = document.querySelector('.GenericModal__overlay');
-    if (modalOverlay) {
-      modalOverlay.style.padding = "0";
-    }
-  }
 
   // Clear the content container
   contentContainer.innerHTML = '';
@@ -327,117 +222,16 @@ const showVideoPlayer = (videoId, videoIndex = 0, videoList = []) => {
     e.stopPropagation();
 
     // If we have a video list and we're not at the beginning
-    if (window.ytvCurrentState && window.ytvCurrentState.videoList && window.ytvCurrentState.videoList.length > 0) {
+    if (window.ytvCurrentState?.videoList?.length > 0) {
       const { videoIndex, videoList } = window.ytvCurrentState;
-
       if (videoIndex > 0) {
-        // Go to previous video
         const prevIndex = videoIndex - 1;
-        const prevVideo = videoList[prevIndex];
-        showVideoPlayer(prevVideo.id.videoId, prevIndex, videoList);
+        showVideoPlayer(videoList[prevIndex].id.videoId, prevIndex, videoList);
       } else {
-        // We're at the first video, go back to search
-        console.debug("YT-Video: At first video, going back to search");
-
-        // Show the search bar again
-        if (searchBar) {
-          searchBar.style.display = "flex";
-        }
-
-        // Show the modal title again
-        if (modalHeader) {
-          modalHeader.style.display = "flex";
-        }
-
-        // Reset content container height
-        contentContainer.style.height = "calc(100% - 56px)";
-
-        // Reset modal content section
-        if (modalContainer) {
-          // Restore padding
-          modalContainer.style.padding = "";
-
-          const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-          if (contentSection) {
-            contentSection.style.height = "calc(80vh - 60px)";
-            contentSection.style.maxHeight = "calc(80vh - 60px)";
-            contentSection.style.padding = "";
-            contentSection.style.margin = "";
-          }
-
-          // Restore padding for inner containers
-          const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-          if (innerContainer) {
-            innerContainer.style.padding = "";
-            innerContainer.style.margin = "";
-          }
-
-          const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-          if (creditsContainer) {
-            creditsContainer.style.padding = "";
-            creditsContainer.style.margin = "";
-          }
-
-          // Restore modal overlay padding
-          const modalOverlay = document.querySelector('.GenericModal__overlay');
-          if (modalOverlay) {
-            modalOverlay.style.padding = "";
-          }
-        }
-
-        performSearch(); // This might cause an error if performSearch is not defined globally
+        returnToSearch();
       }
     } else {
-      // No video list, just go back to search
-      console.debug("YT-Video: Back button clicked, returning to search");
-
-      // Show the search bar again
-      if (searchBar) {
-        searchBar.style.display = "flex";
-      }
-
-      // Show the modal title again
-      if (modalHeader) {
-        modalHeader.style.display = "flex";
-      }
-
-      // Reset content container height
-      contentContainer.style.height = "calc(100% - 56px)";
-
-      // Reset modal content section
-      if (modalContainer) {
-        // Restore padding
-        modalContainer.style.padding = "";
-
-        const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-        if (contentSection) {
-          contentSection.style.height = "calc(80vh - 60px)";
-          contentSection.style.maxHeight = "calc(80vh - 60px)";
-          contentSection.style.padding = "";
-          contentSection.style.margin = "";
-        }
-
-        // Restore padding for inner containers
-        const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-        if (innerContainer) {
-          innerContainer.style.padding = "";
-          innerContainer.style.margin = "";
-        }
-
-        const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-        if (creditsContainer) {
-          creditsContainer.style.padding = "";
-          creditsContainer.style.margin = "";
-        }
-
-        // Restore modal overlay padding
-        const modalOverlay = document.querySelector('.GenericModal__overlay');
-        if (modalOverlay) {
-          modalOverlay.style.padding = "";
-        }
-      }
-
-      performSearch(); // This might cause an error if performSearch is not defined globally
+      returnToSearch();
     }
 
     return false;
@@ -448,118 +242,16 @@ const showVideoPlayer = (videoId, videoIndex = 0, videoList = []) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // If we have a video list and we're not at the end
-    if (window.ytvCurrentState && window.ytvCurrentState.videoList && window.ytvCurrentState.videoList.length > 0) {
+    if (window.ytvCurrentState?.videoList?.length > 0) {
       const { videoIndex, videoList } = window.ytvCurrentState;
-
       if (videoIndex < videoList.length - 1) {
-        // Go to next video
         const nextIndex = videoIndex + 1;
-        const nextVideo = videoList[nextIndex];
-        showVideoPlayer(nextVideo.id.videoId, nextIndex, videoList);
+        showVideoPlayer(videoList[nextIndex].id.videoId, nextIndex, videoList);
       } else {
-        // We're at the last video, go back to search
-        console.debug("YT-Video: At last video, going back to search");
-
-        // Show the search bar again
-        if (searchBar) {
-          searchBar.style.display = "flex";
-        }
-
-        // Show the modal title again
-        if (modalHeader) {
-          modalHeader.style.display = "flex";
-        }
-
-        // Reset content container height
-        contentContainer.style.height = "calc(100% - 56px)";
-
-        // Reset modal content section
-        if (modalContainer) {
-          // Restore padding
-          modalContainer.style.padding = "";
-
-          const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-          if (contentSection) {
-            contentSection.style.height = "calc(80vh - 60px)";
-            contentSection.style.maxHeight = "calc(80vh - 60px)";
-            contentSection.style.padding = "";
-            contentSection.style.margin = "";
-          }
-
-          // Restore padding for inner containers
-          const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-          if (innerContainer) {
-            innerContainer.style.padding = "";
-            innerContainer.style.margin = "";
-          }
-
-          const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-          if (creditsContainer) {
-            creditsContainer.style.padding = "";
-            creditsContainer.style.margin = "";
-          }
-
-          // Restore modal overlay padding
-          const modalOverlay = document.querySelector('.GenericModal__overlay');
-          if (modalOverlay) {
-            modalOverlay.style.padding = "";
-          }
-        }
-
-        performSearch(); // This might cause an error if performSearch is not defined globally
+        returnToSearch();
       }
     } else {
-      // No video list, just go back to search
-      console.debug("YT-Video: Forward button clicked, returning to search");
-
-      // Show the search bar again
-      if (searchBar) {
-        searchBar.style.display = "flex";
-      }
-
-      // Show the modal title again
-      if (modalHeader) {
-        modalHeader.style.display = "flex";
-      }
-
-      // Reset content container height
-      contentContainer.style.height = "calc(100% - 56px)";
-
-      // Reset modal content section
-      if (modalContainer) {
-        // Restore padding
-        modalContainer.style.padding = "";
-
-        const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-        if (contentSection) {
-          contentSection.style.height = "calc(80vh - 60px)";
-          contentSection.style.maxHeight = "calc(80vh - 60px)";
-          contentSection.style.padding = "";
-          contentSection.style.margin = "";
-        }
-
-        // Restore padding for inner containers
-        const innerContainer = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-        if (innerContainer) {
-          innerContainer.style.padding = "";
-          innerContainer.style.margin = "";
-        }
-
-        const creditsContainer = modalContainer.querySelector('.main-trackCreditsModal-originalCredits');
-        if (creditsContainer) {
-          creditsContainer.style.padding = "";
-          creditsContainer.style.margin = "";
-        }
-
-        // Restore modal overlay padding
-        const modalOverlay = document.querySelector('.GenericModal__overlay');
-        if (modalOverlay) {
-          modalOverlay.style.padding = "";
-        }
-      }
-
-      performSearch(); // This might cause an error if performSearch is not defined globally
+      returnToSearch();
     }
 
     return false;
@@ -767,64 +459,6 @@ function showSettings() {
   }, 0);
 }
 
-/**
- * Attempts to find a DOM element using the provided selector
- * @param {string} selector - CSS selector to find the element
- * @param {Element|null} parent - Optional parent element to search within
- * @returns {Promise<Element|null>} The found element or null if not found
- */
-async function getElement(selector, parent = null) {
-  for (let retryCount = 0; retryCount < YTV_RETRY_LIMIT; retryCount++) {
-    const element = parent instanceof Element
-      ? parent.querySelector(selector)
-      : document.querySelector(selector);
-
-    if (element) {
-      console.debug(`YT-Video: Found element '${selector}' on attempt ${retryCount + 1}`);
-      return element;
-    }
-    await new Promise(resolve => setTimeout(resolve, YTV_DELAY_MS));
-  }
-  console.warn(`YT-Video: Failed to find element '${selector}' after ${YTV_RETRY_LIMIT} attempts`);
-  return null;
-}
-
-/**
- * Creates a YouTube button element
- * @returns {HTMLElement} The created button
- */
-function createYouTubeButton() {
-  const button = document.createElement("button");
-  button.classList.add(YTV_BUTTON_CLASS);
-  button.setAttribute("title", YTV_BUTTON_TOOLTIP);
-  button.setAttribute("aria-label", YTV_BUTTON_TOOLTIP);
-  button.innerHTML = YTV_BUTTON_ICON;
-  button.style.backgroundColor = "transparent";
-  button.style.border = "none";
-  button.style.color = YTV_BUTTON_COLOR;
-  button.style.cursor = "pointer";
-  button.style.padding = "0";
-  button.style.width = "32px";
-  button.style.height = "32px";
-  button.style.display = "flex";
-  button.style.alignItems = "center";
-  button.style.justifyContent = "center";
-  button.style.opacity = "0.7";
-  button.style.transition = "opacity 0.2s ease-in-out";
-
-  // Add hover effect
-  button.addEventListener("mouseover", () => {
-    button.style.opacity = "1";
-  });
-  button.addEventListener("mouseout", () => {
-    button.style.opacity = "0.7";
-  });
-
-  // Add click handler
-  button.addEventListener("click", openYouTubeVideo);
-
-  return button;
-}
 
 /**
  * Gets information about the currently playing track
@@ -865,32 +499,6 @@ function getCurrentTrackInfo() {
       console.debug("YT-Video: Error getting track info from Player.getTrackInfo():", e);
     }
 
-    // Method 3: Use DOM elements
-    // Try to get track name and artist from the now playing bar
-    const trackNameElement = document.querySelector(".main-nowPlayingWidget-nowPlaying .main-trackInfo-name");
-    const artistNameElement = document.querySelector(".main-nowPlayingWidget-nowPlaying .main-trackInfo-artists");
-
-    if (trackNameElement && artistNameElement) {
-      console.debug("YT-Video: Found track info using DOM elements");
-      return {
-        name: trackNameElement.textContent,
-        artist: artistNameElement.textContent,
-        album: ""
-      };
-    }
-
-    // Method 4: Try alternative DOM selectors
-    const trackNameAlt = document.querySelector("[data-testid='now-playing-widget'] .main-trackInfo-name");
-    const artistNameAlt = document.querySelector("[data-testid='now-playing-widget'] .main-trackInfo-artists");
-
-    if (trackNameAlt && artistNameAlt) {
-      console.debug("YT-Video: Found track info using alternative DOM selectors");
-      return {
-        name: trackNameAlt.textContent,
-        artist: artistNameAlt.textContent,
-        album: ""
-      };
-    }
 
     // Method 5: Use document title as last resort
     const title = document.title;
@@ -1096,7 +704,7 @@ function openYouTubeVideoForTrack(trackInfo) {
   Spicetify.PopupModal.display({
     title: headerTitle,
     content: `
-      <div id="ytv-container" style="width: 100%; height: 80vh;">
+      <div id="ytv-container" style="width: min(80vw, 1200px); max-width: calc(100vw - 64px); height: 80vh;">
         <div id="ytv-search-bar" style="padding: 8px; display: flex; gap: 8px; align-items: center;">
           <input type="text" id="ytv-search-input" value="${searchQuery}" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; background: #282828; color: white;">
           <button id="ytv-search-button" style="background-color: #FF0000; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Search</button>
@@ -1106,7 +714,7 @@ function openYouTubeVideoForTrack(trackInfo) {
         </div>
         <div id="ytv-content" style="height: calc(100% - 56px); position: relative;">
           <div id="ytv-loading" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #121212;">
-            <div class="main-loadingSpinner-spinner"></div>
+            <span aria-label="Loading">Loading…</span>
           </div>
         </div>
       </div>
@@ -1115,101 +723,16 @@ function openYouTubeVideoForTrack(trackInfo) {
   });
 
 
-  // Apply custom styling to make the modal larger
+  // Use only the extension-owned modal root and semantic close control.
   setTimeout(() => {
-    // Find the modal container
-    const modalContainer = document.querySelector('.GenericModal');
-    if (modalContainer) {
-      // Set the modal to 80% of window width and height
-      modalContainer.style.width = '80vw';
-      modalContainer.style.height = '80vh';
-      modalContainer.style.maxWidth = '80vw';
-      modalContainer.style.maxHeight = '80vh';
-
-      // Center the modal
-      modalContainer.style.position = 'fixed';
-      modalContainer.style.left = '50%';
-      modalContainer.style.top = '45%';
-      modalContainer.style.transform = 'translate(-50%, -50%)';
-      modalContainer.style.zIndex = '9999';
-
-      // Adjust inner content
-      const contentSection = modalContainer.querySelector('.main-trackCreditsModal-mainSection');
-      if (contentSection) {
-        contentSection.style.height = 'calc(80vh - 40px)'; // Reduced from 60px to 40px
-        contentSection.style.maxHeight = 'calc(80vh - 40px)'; // Reduced from 60px to 40px
-        contentSection.style.overflow = 'hidden';
-      }
-
-      // Make sure the container is visible
-      const container = modalContainer.querySelector('.main-embedWidgetGenerator-container');
-      if (container) {
-        container.style.width = '100%';
-        container.style.height = '100%';
-        container.style.display = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.overflow = 'hidden';
-      }
-
-      // Modify the header to take up less space
-      const header = modalContainer.querySelector('.main-trackCreditsModal-header');
-      if (header) {
-        header.style.padding = '8px 16px'; // Reduced padding
-        header.style.minHeight = '40px'; // Reduced height
-        header.style.height = '40px'; // Fixed height
-
-        // Adjust the title font size
-        const title = header.querySelector('.main-type-alto');
-        if (title) {
-          title.style.fontSize = '16px'; // Smaller font size
-          title.style.overflow = 'hidden';
-          title.style.textOverflow = 'ellipsis';
-          title.style.whiteSpace = 'nowrap';
-          title.style.maxWidth = 'calc(100% - 40px)'; // Leave space for close button
-        }
-      }
-
-      // Prevent modal from closing when clicking inside
-      const modalOverlay = document.querySelector('.GenericModal__overlay');
-      if (modalOverlay) {
-        // Store the original click handler
-        const originalClickHandler = modalOverlay.onclick;
-
-        // Replace with our handler that checks if click is on overlay
-        modalOverlay.onclick = (e) => {
-          // Only close if clicking directly on the overlay (not its children)
-          if (e.target === modalOverlay) {
-            // Clean up video state when modal closes
-            console.debug("YT-Video: Modal closing, cleaning up video state");
-            window.ytvCurrentState = null;
-            if (originalClickHandler) originalClickHandler(e);
-          } else {
-            // Prevent event from bubbling up to overlay
-            e.stopPropagation();
-          }
-        };
-      }
-
-      // Add cleanup for close button
-      const closeButton = modalContainer.querySelector('[aria-label="Close"]');
-      if (closeButton) {
-        const originalCloseHandler = closeButton.onclick;
-        closeButton.onclick = (e) => {
-          console.debug("YT-Video: Modal close button clicked, cleaning up video state");
-          window.ytvCurrentState = null;
-          if (originalCloseHandler) originalCloseHandler(e);
-        };
-      }
-
-      // Add click handler to the container to prevent event bubbling
-      const ytvContainer = document.getElementById('ytv-container');
-      if (ytvContainer) {
-        ytvContainer.addEventListener('click', (e) => {
-          e.stopPropagation();
-        });
-      }
-    }
-  }, 100);
+    const ytvContainer = document.getElementById('ytv-container');
+    const modalRoot = ytvContainer?.closest('generic-modal');
+    const closeButton = modalRoot?.querySelector('[aria-label="Close"]');
+    closeButton?.addEventListener('click', () => {
+      window.ytvCurrentState = null;
+    }, { once: true });
+    ytvContainer?.addEventListener('click', event => event.stopPropagation());
+  }, 0);
 
   // Add event listeners
   setTimeout(() => {
@@ -1228,7 +751,7 @@ function openYouTubeVideoForTrack(trackInfo) {
       // Show loading spinner
       currentContentContainer.innerHTML = `
         <div style="width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #121212;">
-          <div class="main-loadingSpinner-spinner"></div>
+          <span aria-label="Loading">Loading…</span>
         </div>
       `;
 
@@ -1674,9 +1197,8 @@ function handleKeyboardShortcut(event) {
       return false;
     }
 
-    // If help overlay is not visible, try to close the main modal/player
-    const modal = document.querySelector('.GenericModal');
-    if (modal && document.getElementById('ytv-container')) {
+    // If help is not visible, close this extension's modal.
+    if (document.getElementById('ytv-container')) {
       console.debug("YT-Video: ESC key pressed, closing main modal/player");
 
       // Clean up video state
@@ -1748,47 +1270,23 @@ function handleKeyboardShortcut(event) {
 }
 
 /**
- * Adds the YouTube button to the player controls
- * @returns {Promise<boolean>} Whether the button was added successfully
+ * Registers the YouTube control through Spicetify's stable playbar API.
+ * @returns {Promise<boolean>} Whether the button was registered successfully
  */
 async function addYouTubeButton() {
-  console.debug("YT-Video: Adding YouTube button");
-
-  // Check if button already exists
-  const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
-  if (existingButton) {
-    console.debug("YT-Video: Button already exists");
-    return true;
+  if (ytvPlaybarButton) return true;
+  if (!Spicetify.Playbar?.Button) {
+    console.error("YT-Video: Spicetify.Playbar.Button is not available");
+    return false;
   }
 
-  // Create the button
-  const button = createYouTubeButton();
-
-  // Try to add the button to different locations
-  const buttonLocations = [
-    ".main-trackInfo-container", // Track info container
-    ".main-nowPlayingBar-extraControls", // Extra controls container
-    ".main-nowPlayingBar-right", // Right controls container
-    ".main-nowPlayingWidget-nowPlaying" // Now playing widget
-  ];
-
-  for (const location of buttonLocations) {
-    const container = await getElement(location);
-    if (container) {
-      console.debug(`YT-Video: Adding button to ${location}`);
-      container.appendChild(button);
-      return true;
-    }
-  }
-
-  // If no suitable container is found, add to body with fixed position
-  console.debug("YT-Video: No suitable container found, adding to body");
-  button.style.position = "fixed";
-  button.style.bottom = "80px";
-  button.style.right = "16px";
-  button.style.zIndex = "9999";
-  document.body.appendChild(button);
-
+  ytvPlaybarButton = new Spicetify.Playbar.Button(
+    YTV_BUTTON_TOOLTIP,
+    YTV_BUTTON_ICON,
+    openYouTubeVideo,
+    false
+  );
+  ytvPlaybarButton.register();
   return true;
 }
 
@@ -1834,10 +1332,7 @@ function addContextMenuItems() {
       const uri = uris[0];
       console.debug("YT-Video: Context menu item clicked for URI:", uri);
 
-      let trackInfo = getRecentLastContextTrackInfo();
-      if (!trackInfo) {
-        trackInfo = await getTrackInfoFromURI(uri);
-      }
+      const trackInfo = await getTrackInfoFromURI(uri);
 
       if (!trackInfo) {
         showYtvNotification("Could not retrieve track information");
@@ -1888,32 +1383,8 @@ async function init() {
 
   // Add keyboard shortcut listener
   document.addEventListener('keydown', handleKeyboardShortcut, true);
-  document.addEventListener('pointerdown', captureContextMenuTrackInfo, true);
-  document.addEventListener('mousedown', captureContextMenuTrackInfo, true);
-  document.addEventListener('contextmenu', captureContextMenuTrackInfo, true);
   console.debug("YT-Video: Added keyboard shortcut listener (Ctrl/Cmd+Y & Alt/Opt+Arrows)");
 
-  // Add event listeners for track changes to check if button still exists
-  Spicetify.Player.addEventListener("songchange", async () => {
-    console.debug("YT-Video: Song changed, checking button");
-    // Only re-add the button if it's missing
-    const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
-    if (!existingButton) {
-      console.debug("YT-Video: Button not found, re-adding");
-      await addYouTubeButton();
-    }
-  });
-
-  // Also listen for app changes
-  Spicetify.Platform.History.listen(async () => {
-    console.debug("YT-Video: App navigation detected, checking button");
-    // Only re-add the button if it's missing
-    const existingButton = document.querySelector(`.${YTV_BUTTON_CLASS}`);
-    if (!existingButton) {
-      console.debug("YT-Video: Button not found, re-adding");
-      await addYouTubeButton();
-    }
-  });
 
   console.debug("YT-Video: Initialization complete");
 }
@@ -1932,7 +1403,7 @@ const ytv_main = async (condition, callback) => {
 
 // Initialize when Spicetify is ready
 ytv_main(() => {
-  const ready = Spicetify && Spicetify.Platform && Spicetify.Platform[YTV_SPICETIFY_LAST_LOADED_API] && document.readyState === 'complete';
+  const ready = Spicetify && Spicetify.Platform && Spicetify.Platform[YTV_SPICETIFY_LAST_LOADED_API] && Spicetify.Playbar?.Button && document.readyState === 'complete';
   if (ready) {
     console.debug("YT-Video: Spicetify is ready");
   }

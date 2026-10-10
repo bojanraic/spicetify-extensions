@@ -16,11 +16,6 @@ const FM_PLAYER_CONTROLS_ID = `${FM_ELEMENT_ID_PREFIX}player-controls`; // Used 
 const FM_TRACK_INFO_ID = `${FM_ELEMENT_ID_PREFIX}track-info`; // Used within React component
 const FM_REACT_ROOT_ID = `${FM_ELEMENT_ID_PREFIX}react-root`;
 const FM_BUTTON_LABEL = "Focus Mode";
-const FM_SVG_ICON_CLASS = "e-9800-icon"; // Standard class for Spicetify icons
-
-// Constants for the main Playbar button icon structure
-const FM_PLAYBAR_ICON_WRAPPER_CLASS = "e-9800-button__icon-wrapper";
-const FM_PLAYBAR_SVG_CLASSES = "e-9800-icon e-9800-baseline"; // Classes from example button
 
 const FM_CONTROL_BUTTON_STYLE = {
     background: 'rgba(255, 255, 255, 0.1)', // Semi-transparent white background
@@ -38,11 +33,6 @@ const FM_CONTROL_BUTTON_STYLE = {
     cursor: 'pointer',
 };
 
-const FM_SELECTORS = {
-  APP_CONTENT: "body .Root__top-bar, body .Root__nav-bar, body .Root__main-view, body .Root__now-playing-bar, body .Root__right-sidebar",
-  EXTRA_ELEMENTS: ".main-nowPlayingView-section, .main-trackInfo-container, .main-trackList-trackList",
-  PLAYER_CONTROLS_CENTER: ".main-nowPlayingBar-center",
-};
 
 // --- Global State (Managed outside React for simplicity in this structure) ---
 let isFocusModeActive = false;
@@ -88,16 +78,6 @@ function injectFocusModeStyles() {
   const styleId = "focus-mode-styles";
   // Returns the CSS string, does not inject directly
   return `
-    /* Hide original UI when focus mode active */
-    body.${FM_CLASS_NAME} ${FM_SELECTORS.APP_CONTENT} {
-      opacity: 0 !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
-      transition: opacity ${FM_FADE_DURATION_MS}ms ease, visibility ${FM_FADE_DURATION_MS}ms ease;
-    }
-    body.${FM_CLASS_NAME} ${FM_SELECTORS.EXTRA_ELEMENTS} {
-      display: none !important;
-    }
     body.${FM_CLASS_NAME} { 
       overflow: hidden !important; 
       /* Cursor hidden globally removed */
@@ -107,7 +87,7 @@ function injectFocusModeStyles() {
     #${FM_REACT_ROOT_ID} {
       display: none; /* Hidden by default */
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      z-index: 9998; 
+      z-index: 2147483000;
       background-color: #000; 
       pointer-events: none; /* Initially no pointer events */
       cursor: none; /* Hide cursor only on the background element */
@@ -187,10 +167,6 @@ function injectFocusModeStyles() {
       font-size: 0.9em; opacity: 0.7; font-style: italic;
     }
     
-    /* Ensure cloned controls inherit necessary styles */
-    #${FM_PLAYER_CONTROLS_ID} .main-nowPlayingBar-center {
-        /* Add specific overrides if needed */
-    }
     
     /* --- Lyrics Overlay Styles --- */
     #fad-lyrics-plus-container.lyrics-overlay-container {
@@ -848,22 +824,6 @@ function deactivateFocusMode() {
   document.body.classList.remove(FM_CONTROLS_VISIBLE_CLASS);
   console.log("Focus Mode: Body classList AFTER removal:", document.body.classList.toString());
   
-  // 4. Explicitly restore visibility of original UI elements
-  try {
-    document.querySelectorAll(FM_SELECTORS.APP_CONTENT).forEach(el => {
-        if (el instanceof HTMLElement) {
-            // console.log("Focus Mode: Resetting styles for element:", el.className);
-            el.style.opacity = '1';
-            el.style.visibility = 'visible';
-            el.style.pointerEvents = 'auto';
-            // Attempt to restore display, 'flex' is common for these root elements
-            el.style.display = ''; 
-        }
-    });
-    console.log("Focus Mode: Explicitly restored original UI element styles.");
-  } catch (e) {
-      console.error("Focus Mode: Error restoring original UI styles:", e);
-  }
 
   // 5. Reset state
   isFocusModeActive = false;
@@ -928,19 +888,17 @@ function addFocusModeButton() {
 
   // Create the full SVG element string mimicking Spotify's structure
   const finalButtonIcon = `
-    <span class="${FM_PLAYBAR_ICON_WRAPPER_CLASS}" aria-hidden="true">
-      <svg 
-        role="img"
-        height="16"
-        width="16"
-        aria-hidden="true"
-        viewBox="0 0 128 128" 
-        fill="currentColor"
-        class="${FM_PLAYBAR_SVG_CLASSES}"
-      >
-        ${customIconSvgContent}
-      </svg>
-    </span>
+    <svg
+      role="img"
+      height="16"
+      width="16"
+      aria-hidden="true"
+      viewBox="0 0 128 128"
+      fill="currentColor"
+      class="focus-mode-playbar-icon"
+    >
+      ${customIconSvgContent}
+    </svg>
   `;
 
   focusModeButton = new Spicetify.Playbar.Button(

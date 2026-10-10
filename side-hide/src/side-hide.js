@@ -11,8 +11,8 @@ function sh_buildSelectors() {
     return {
         // aside#Desktop_PanelContainer_Id is language-independent; Translations-based fallback
         NOW_PLAYING_ASIDE: `aside#Desktop_PanelContainer_Id, aside[aria-label="${npvLabel}"]`,
-        // class from dwp-panel-section.js; Translations-based aria-label fallback
-        NOW_PLAYING_HIDE_BTN: `button.main-nowPlayingView-headerCloseButton, button[aria-label="${hideLabel}"]`,
+        // Translations-based aria-label; stable data-testid fallback is tried separately.
+        NOW_PLAYING_HIDE_BTN: `button[aria-label="${hideLabel}"]`,
     };
 }
 
@@ -136,8 +136,8 @@ async function hideSide() {
       
       if (!closeButtonClicked) {
         console.log(`Side-Hide: Could not find any close buttons, forcing hide`);
-        nowPlayingAside.style.display = 'none !important';
-        nowPlayingAside.style.visibility = 'hidden !important';
+        nowPlayingAside.style.setProperty('display', 'none', 'important');
+        nowPlayingAside.style.setProperty('visibility', 'hidden', 'important');
         console.log("Side-Hide: Now Playing view hidden on initialization");
       }
     }

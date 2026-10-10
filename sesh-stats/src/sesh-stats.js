@@ -31,6 +31,7 @@
   let activeTab = 'session'; // 'session' | 'history'
   let historyRange = '7d'; // '7d' | '30d' | '90d' | 'all'
   let topN = 10;
+  let statsButton;
 
   // ── Storage ──────────────────────────────────────────────────────────────
 
@@ -252,7 +253,7 @@
   // ── Init ──────────────────────────────────────────────────────────────────
 
   async function init() {
-    while (!Spicetify || !Spicetify.Player || !Spicetify.Platform) {
+    while (!Spicetify || !Spicetify.Player || !Spicetify.Platform || !Spicetify.Playbar?.Button) {
       await new Promise(r => setTimeout(r, 100));
     }
 
@@ -743,35 +744,26 @@
   // ── Button ────────────────────────────────────────────────────────────────
 
   function injectPlayTimeButton() {
-    if (document.readyState !== 'complete') { setTimeout(injectPlayTimeButton, 300); return; }
-    const inject = () => {
-      const extraControls = document.querySelector('.main-nowPlayingBar-extraControls');
-      if (!extraControls) { setTimeout(inject, 300); return; }
+    if (statsButton) return;
 
-      const container = document.createElement('div');
-      container.id = 'sesh-stats-container';
-      container.style.cssText = 'display:inline-flex;align-items:center;';
+    const icon = `
+      <span class="sesh-eq${isPlaying ? '' : ' paused'}" id="sesh-eq-icon" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </span>`;
 
-      const btn = document.createElement('button');
-      btn.className = 'sesh-stats-button Button-sc-1dqy6lx-0 Button-buttonTertiary-small-iconOnly-useBrowserDefaultFocusStyle';
-      btn.setAttribute('aria-label', 'Session Stats');
-      btn.title = 'Session Stats';
-      btn.onclick = toggleDetailsOverlay;
-      btn.innerHTML = `
-        <span class="sesh-eq${isPlaying ? '' : ' paused'}" id="sesh-eq-icon">
-          <span></span><span></span><span></span><span></span>
-        </span>`;
+    statsButton = new Spicetify.Playbar.Button(
+      'Session Stats',
+      icon,
+      toggleDetailsOverlay,
+      false
+    );
+    statsButton.register();
 
-      // Keep eq animation in sync with play state
-      setInterval(() => {
-        const eq = btn.querySelector('#sesh-eq-icon');
-        if (eq) eq.classList.toggle('paused', !isPlaying);
-      }, 500);
-
-      container.appendChild(btn);
-      extraControls.insertBefore(container, extraControls.firstChild);
-    };
-    inject();
+    // Keep the equalizer animation in sync with playback state.
+    setInterval(() => {
+      const eq = statsButton?.element?.querySelector('#sesh-eq-icon');
+      if (eq) eq.classList.toggle('paused', !isPlaying);
+    }, 500);
   }
 
   // ── Overlay ───────────────────────────────────────────────────────────────

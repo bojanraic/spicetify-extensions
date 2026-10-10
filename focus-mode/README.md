@@ -4,7 +4,7 @@ Focus-Mode is a Spicetify extension that creates a distraction-free listening ex
 
 ## How it works
 - Adds a focus mode button to the player controls bar
-- When activated, hides everything in the Spotify UI except the album art
+- When activated, displays a fullscreen, extension-owned overlay with the album art and controls
 - Automatically enters fullscreen mode for a completely immersive experience
 - Shows player controls, track information, and a seekable progress bar on mouse movement
 - Controls automatically hide after 3 seconds of inactivity
