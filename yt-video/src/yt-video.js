@@ -42,6 +42,9 @@ const YTV_DEFAULT_SETTINGS = {
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
 const ytvRateLimitedUntilByUri = new Map();
 let ytvLastContextMenuActionAt = 0;
+// Minimum delay between YouTube Data API calls to avoid exhausting the shared quota
+const YTV_MIN_API_CALL_INTERVAL_MS = 1000;
+let ytvLastApiCallAt = 0;
 let ytvPlaybarButton = null;
 function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
   Spicetify.showNotification(message, false, durationMs);
@@ -767,6 +770,15 @@ function openYouTubeVideoForTrack(trackInfo) {
         } else {
           // Fetch from API if not in cache
           const encodedApiQuery = encodeURIComponent(query); // Renamed to avoid conflict
+
+          // Enforce a minimum interval between API calls so rapid song changes or
+          // automated interactions cannot exhaust the shared daily API quota.
+          const elapsedSinceLastApiCall = Date.now() - ytvLastApiCallAt;
+          if (elapsedSinceLastApiCall < YTV_MIN_API_CALL_INTERVAL_MS) {
+            await new Promise((resolve) => setTimeout(resolve, YTV_MIN_API_CALL_INTERVAL_MS - elapsedSinceLastApiCall));
+          }
+          ytvLastApiCallAt = Date.now();
+
           const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedApiQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`);
           data = await response.json();
 
