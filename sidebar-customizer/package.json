@@ -9,14 +9,13 @@
   },
   "scripts": {
     "build": "webpack --mode=production",
-    "build-dev": "webpack --mode=development",
-    "deploy-dev": "npm run build-dev && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply",
-    "clean": "rm -rf ./dist",
-    "copy": "cp src/sidebar-customizer.js `spicetify path userdata`/Extensions",
+    "build-dev": "webpack --mode=development --no-optimization-minimize --devtool=false --output-path dist-dev",
+    "copy-dev": "cp dist-dev/sidebar-customizer.js `spicetify path userdata`/Extensions/sidebar-customizer.js",
+    "clean": "rm -rf ./dist ./dist-dev",
     "copy-dist": "cp dist/sidebar-customizer.js `spicetify path userdata`/Extensions/sidebar-customizer.js",
-    "deploy": "npm run copy && spicetify config extensions sidebar-customizer.js && spicetify apply && spicetify enable-devtools",
+    "deploy": "npm run build-dev && npm run copy-dev && spicetify config extensions sidebar-customizer.js && spicetify apply && spicetify enable-devtools",
     "deploy-dist": "npm run build && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply",
-    "local": "npm run clean && npm run build && npm run deploy",
+    "local": "npm run clean && npm run build && npm run copy-dist && spicetify config extensions sidebar-customizer.js && spicetify apply && spicetify enable-devtools",
     "undeploy": "rm -rf `spicetify path userdata`/Extensions/sidebar-customizer.js && spicetify config extensions sidebar-customizer.js- && spicetify apply"
   }
 }
