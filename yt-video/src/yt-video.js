@@ -3,13 +3,9 @@
 
 // UI Text constants
 const YTV_BUTTON_TOOLTIP = "Watch on YouTube (Ad-Free)";
-const YTV_CONTEXT_MENU_ITEM = "Play video";
 
 // CSS/DOM constants
 const YTV_BUTTON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-  <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
-</svg>`;
-const YTV_CONTEXT_MENU_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="#FF0000" style="margin-right: 4px; vertical-align: -3px;">
   <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
 </svg>`;
 
@@ -25,7 +21,6 @@ const YTV_MUSIC_VIDEO_SEARCH_SUFFIX = "music video";
 const YTV_CACHE_KEY_PREFIX = "yt-video:cache:";
 const YTV_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const YTV_SEARCH_CACHE_SIZE = 100; // Maximum number of cached search results
-const YTV_CONTEXT_MENU_GUARD_MS = 800;
 const YTV_RATE_LIMIT_FALLBACK_SECONDS = 15;
 const YTV_MAX_RETRY_AFTER_SECONDS = 60;
 const YTV_NOTIFICATION_DURATION_MS = 3000;
@@ -42,7 +37,6 @@ const YTV_DEFAULT_SETTINGS = {
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
 const ytvRateLimitedUntilByUri = new Map();
-let ytvLastContextMenuActionAt = 0;
 let ytvPlaybarButton = null;
 function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
   try {
@@ -52,18 +46,6 @@ function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS)
   }
 }
 
-
-// Use window object for persistent registration flag to prevent duplicates on reload
-const getContextMenuRegisteredFlag = () => {
-  if (!window.__ytvContextMenuRegistered) {
-    window.__ytvContextMenuRegistered = false;
-  }
-  return window.__ytvContextMenuRegistered;
-};
-
-const setContextMenuRegisteredFlag = (value) => {
-  window.__ytvContextMenuRegistered = value;
-};
 
 // Declare performSearch, showApiResults, and showEmbedResults globally so they can be accessed by showVideoPlayer
 let performSearch;
@@ -1363,79 +1345,6 @@ async function addYouTubeButton() {
 }
 
 /**
- * Adds context menu items for YouTube search
- */
-function addContextMenuItems() {
-  // Prevent duplicate registrations using persistent flag
-  if (getContextMenuRegisteredFlag()) {
-    console.debug("YT-Video: Context menu items already registered, skipping");
-    return;
-  }
-
-  if (!Spicetify.ContextMenu) {
-    console.error("YT-Video: Spicetify.ContextMenu is not available");
-    return;
-  }
-
-  // Add context menu item for tracks, albums, and artists
-  const watchOnYouTubeItem = new Spicetify.ContextMenu.Item(
-    YTV_CONTEXT_MENU_ITEM,
-    async (uris) => {
-      const now = Date.now();
-      if (now - ytvLastContextMenuActionAt < YTV_CONTEXT_MENU_GUARD_MS) {
-        console.debug("YT-Video: Context menu action ignored by re-entry guard");
-        return;
-      }
-      ytvLastContextMenuActionAt = now;
-
-      if (!uris || !uris.length) {
-        console.error("YT-Video: No URIs provided to context menu handler");
-        showYtvNotification("Error: No track URI provided");
-        return;
-      }
-
-      // Pause the song if it's playing
-      if (Spicetify.Player.isPlaying()) {
-        console.debug("YT-Video: Pausing playback");
-        Spicetify.Player.pause();
-      }
-
-      // Get the first URI (we only handle one at a time)
-      const uri = uris[0];
-      console.debug("YT-Video: Context menu item clicked for URI:", uri);
-
-      const trackInfo = await getTrackInfoFromURI(uri);
-
-      if (!trackInfo) {
-        showYtvNotification("Could not retrieve track information");
-        return;
-      }
-
-      // Open YouTube video for the track
-      openYouTubeVideoForTrack(trackInfo);
-    },
-    (uris) => {
-      // Only show for tracks, albums, and artists
-      if (!uris || !uris.length) return false;
-
-      const uri = uris[0];
-      return uri.includes("spotify:track:") ||
-        uri.includes("spotify:album:") ||
-        uri.includes("spotify:artist:");
-    },
-    YTV_CONTEXT_MENU_ICON
-  );
-
-  // Register the context menu item
-  watchOnYouTubeItem.register();
-
-  // Mark as registered to prevent duplicates using persistent flag
-  setContextMenuRegisteredFlag(true);
-
-  console.debug("YT-Video: Added context menu items");
-}
-
-/**
  * Initializes the extension
  */
 async function init() {
@@ -1449,21 +1358,6 @@ async function init() {
 
   // Add YouTube button
   await addYouTubeButton();
-
-  // Add context menu items. Spicetify's React internals can lag behind the
-  // other APIs, so retry instead of gating the whole init on them.
-  (async () => {
-    for (let attempt = 1; attempt <= 20; attempt++) {
-      try {
-        addContextMenuItems();
-        return;
-      } catch (error) {
-        console.warn(`YT-Video: Context menu registration failed (attempt ${attempt}/20):`, error);
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-    console.error("YT-Video: Giving up on context menu registration");
-  })();
 
   // Add keyboard shortcut listener
   document.addEventListener('keydown', handleKeyboardShortcut, true);
