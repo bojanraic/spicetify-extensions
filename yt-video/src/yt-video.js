@@ -16,6 +16,7 @@ const YTV_CONTEXT_MENU_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 // Configuration constants
 const YTV_DELAY_MS = 120;
 const YTV_NOCOOKIE_DOMAIN = "www.youtube-nocookie.com";
+const YTV_BUTTON_COLOR = "#FF0000"; // YouTube red color
 const YTV_SETTINGS_KEY = "yt-video:settings";
 const YTV_SPICETIFY_LAST_LOADED_API = "FeedbackAPI"; // This is the last API that Spicetify loads
 const YTV_MUSIC_VIDEO_SEARCH_SUFFIX = "music video";
@@ -44,7 +45,11 @@ const ytvRateLimitedUntilByUri = new Map();
 let ytvLastContextMenuActionAt = 0;
 let ytvPlaybarButton = null;
 function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
-  Spicetify.showNotification(message, false, durationMs);
+  try {
+    Spicetify.showNotification(message, false, durationMs);
+  } catch (error) {
+    console.warn("YT-Video: Spicetify.showNotification failed, message was:", message, error);
+  }
 }
 
 
@@ -468,6 +473,35 @@ function getCurrentTrackInfo() {
   console.debug("YT-Video: Getting current track info");
 
   try {
+    // Diagnostics (console.info is stripped from production builds)
+    const diagData = Spicetify.Player?.data;
+    console.info("YT-Video: [diag] Player available:", !!Spicetify.Player,
+      "| data available:", !!diagData,
+      "| data keys:", diagData ? Object.keys(diagData) : null,
+      "| has data.track:", !!diagData?.track,
+      "| has data.item:", !!diagData?.item,
+      "| getTrackInfo is function:", typeof Spicetify.Player?.getTrackInfo === 'function',
+      "| document.title:", document.title);
+    if (diagData?.track) {
+      console.info("YT-Video: [diag] data.track keys:", Object.keys(diagData.track),
+        "| metadata keys:", diagData.track.metadata ? Object.keys(diagData.track.metadata) : null);
+    }
+    if (diagData?.item) {
+      console.info("YT-Video: [diag] data.item keys:", Object.keys(diagData.item),
+        "| metadata keys:", diagData.item.metadata ? Object.keys(diagData.item.metadata) : null);
+    }
+
+    // Method 0: Newer Spotify builds expose the track as Player.data.item
+    const item = Spicetify.Player?.data?.item;
+    if (item && (item.name || item.metadata?.title)) {
+      console.debug("YT-Video: Found track info using Player.data.item");
+      return {
+        name: item.name || item.metadata.title,
+        artist: item.artists?.[0]?.name || item.metadata?.artist_name || "",
+        album: item.album?.name || item.metadata?.album_title || ""
+      };
+    }
+
     // Method 1: Use Spicetify.Player.data
     if (Spicetify.Player && Spicetify.Player.data) {
       const data = Spicetify.Player.data;
@@ -498,10 +532,12 @@ function getCurrentTrackInfo() {
     } catch (e) {
       console.debug("YT-Video: Error getting track info from Player.getTrackInfo():", e);
     }
+    console.info("YT-Video: [diag] Methods 1 and 2 yielded no track info");
 
 
     // Method 5: Use document title as last resort
     const title = document.title;
+    console.info("YT-Video: [diag] Trying document title fallback:", JSON.stringify(title));
     if (title && title.includes(" - ") && !title.startsWith("Spotify")) {
       const parts = title.split(" - ");
       if (parts.length >= 2) {
@@ -727,6 +763,20 @@ function openYouTubeVideoForTrack(trackInfo) {
   setTimeout(() => {
     const ytvContainer = document.getElementById('ytv-container');
     const modalRoot = ytvContainer?.closest('generic-modal');
+    // Spotify caps the popup at ~664px; widen it so the 1200px container fits without a horizontal scrollbar
+    const popup = ytvContainer?.closest('.GenericModal');
+    if (popup && ytvContainer) {
+      popup.style.width = 'min(80vw, 1248px)';
+      popup.style.maxWidth = 'calc(100vw - 32px)';
+      ytvContainer.style.width = '100%';
+      ytvContainer.style.maxWidth = '100%';
+      const main = ytvContainer.closest('main');
+      if (main) main.style.width = '100%';
+      const popupContainer = ytvContainer.closest('.spicetify-popup-container');
+      if (popupContainer) popupContainer.style.width = '100%';
+      const popupContent = ytvContainer.closest('.spicetify-popup-content');
+      if (popupContent) popupContent.style.overflowX = 'hidden';
+    }
     const closeButton = modalRoot?.querySelector('[aria-label="Close"]');
     closeButton?.addEventListener('click', () => {
       window.ytvCurrentState = null;
@@ -1159,6 +1209,7 @@ function openYouTubeVideoForTrack(trackInfo) {
  */
 function openYouTubeVideo() {
   const trackInfo = getCurrentTrackInfo();
+  console.info("YT-Video: [diag] openYouTubeVideo trackInfo:", trackInfo);
   if (trackInfo) {
     openYouTubeVideoForTrack(trackInfo);
   } else {
@@ -1287,6 +1338,27 @@ async function addYouTubeButton() {
     false
   );
   ytvPlaybarButton.register();
+
+  // Spicetify attaches the button to .main-nowPlayingBar-extraControls, which no
+  // longer exists in newer Spotify builds (hashed class names). Place it next to
+  // the track title / like button in the now-playing widget instead.
+  const ensureAttached = () => {
+    const el = ytvPlaybarButton?.element;
+    if (!el) return;
+    const widget = document.querySelector('[data-testid="now-playing-widget"]');
+    const buttons = widget ? [...widget.querySelectorAll("button")].filter(b => b !== el) : [];
+    const anchor = buttons[buttons.length - 1];
+    const slot = anchor?.parentElement;
+    if (!slot || !slot.parentElement) return;
+    if (slot.nextElementSibling === el) return;
+    console.info("YT-Video: [diag] Placing button after now-playing widget control:", anchor.getAttribute("aria-label"));
+    slot.after(el);
+    el.style.color = YTV_BUTTON_COLOR;
+    el.style.opacity = "0.85";
+    el.style.marginInlineStart = "8px";
+  };
+  ensureAttached();
+  setInterval(ensureAttached, 2000);
   return true;
 }
 
@@ -1378,8 +1450,20 @@ async function init() {
   // Add YouTube button
   await addYouTubeButton();
 
-  // Add context menu items
-  addContextMenuItems();
+  // Add context menu items. Spicetify's React internals can lag behind the
+  // other APIs, so retry instead of gating the whole init on them.
+  (async () => {
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      try {
+        addContextMenuItems();
+        return;
+      } catch (error) {
+        console.warn(`YT-Video: Context menu registration failed (attempt ${attempt}/20):`, error);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    console.error("YT-Video: Giving up on context menu registration");
+  })();
 
   // Add keyboard shortcut listener
   document.addEventListener('keydown', handleKeyboardShortcut, true);
@@ -1395,11 +1479,28 @@ async function init() {
  * @param {function(): Promise<void>} callback - Async function to execute when ready
  */
 const ytv_main = async (condition, callback) => {
+  let waited = 0;
   while (!condition()) {
     await new Promise(resolve => setTimeout(resolve, YTV_DELAY_MS));
+    waited += YTV_DELAY_MS;
+    if (waited % 5000 < YTV_DELAY_MS) {
+      console.info("YT-Video: [diag] Still waiting for Spicetify after", waited, "ms:", {
+        Spicetify: typeof Spicetify,
+        Platform: !!Spicetify?.Platform,
+        [YTV_SPICETIFY_LAST_LOADED_API]: !!Spicetify?.Platform?.[YTV_SPICETIFY_LAST_LOADED_API],
+        PlaybarButton: !!Spicetify?.Playbar?.Button,
+        readyState: document.readyState
+      });
+    }
   }
-  await callback();
+  try {
+    await callback();
+  } catch (error) {
+    console.error("YT-Video: Initialization failed:", error);
+  }
 };
+
+console.info("YT-Video: [diag] Script loaded");
 
 // Initialize when Spicetify is ready
 ytv_main(() => {
