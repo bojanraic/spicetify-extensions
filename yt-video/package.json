@@ -9,6 +9,7 @@
     "webpack-cli": "^5.1.4"
   },
   "scripts": {
+    "test": "node --test",
     "build": "webpack --mode=production",
     "clean": "rm -rf ./dist",
     "copy": "cp src/yt-video.js `spicetify path userdata`/Extensions",

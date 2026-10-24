@@ -37,6 +37,29 @@ const YTV_DEFAULT_SETTINGS = {
 // Global state
 let ytvSettings = { ...YTV_DEFAULT_SETTINGS };
 const ytvRateLimitedUntilByUri = new Map();
+// Safeguards around the shared YouTube Data API quota. These only limit what
+// *this* extension instance does - they cannot coordinate with other apps
+// using the same GCP project, so they are a local mitigation, not a guarantee.
+// Minimum delay between the start of successive YouTube Data API calls.
+const YTV_MIN_API_CALL_INTERVAL_MS = 1000;
+// search.list costs 100 quota units; a typical default daily allocation is
+// 10,000 units (~100 calls). Capping this instance well below that leaves
+// headroom for other apps/instances sharing the same GCP project. The cap is
+// a rolling window: a call stops counting once it is older than the window,
+// so the feature recovers on its own without reloading Spotify.
+const YTV_MAX_API_CALLS_PER_WINDOW = 20;
+const YTV_API_BUDGET_WINDOW_MS = 60 * 60 * 1000;
+// Applied once the API itself reports quota exhaustion. We can't know the
+// real reset time client-side, so use a conservative fixed cooldown instead
+// of retrying.
+const YTV_QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
+let ytvLastApiCallAt = 0;
+// Start times of API calls still inside the budget window, oldest first.
+let ytvApiCallTimestamps = [];
+let ytvQuotaExhaustedUntil = 0;
+let ytvApiCallGate = Promise.resolve();
+const ytvPendingSearches = new Map(); // normalized query -> { promise, controller }
+let ytvCurrentSearchToken = 0;
 let ytvPlaybarButton = null;
 function showYtvNotification(message, durationMs = YTV_NOTIFICATION_DURATION_MS) {
   try {
@@ -349,6 +372,209 @@ const cacheUtils = {
     return `track:${trackInfo.artist}:${trackInfo.name}`.toLowerCase().trim();
   }
 };
+
+class YtvBudgetExhaustedError extends Error {
+  /** @param {number} [retryAfterMs] - Time until the oldest call leaves the window */
+  constructor(retryAfterMs = 0) {
+    super("YouTube search budget reached");
+    this.name = "YtvBudgetExhaustedError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+class YtvQuotaCoolingDownError extends Error {
+  constructor() {
+    super("YouTube API quota temporarily exhausted");
+    this.name = "YtvQuotaCoolingDownError";
+  }
+}
+
+function ytvHasApiBudget() {
+  ytvPruneApiCallTimestamps();
+  return ytvApiCallTimestamps.length < YTV_MAX_API_CALLS_PER_WINDOW;
+}
+
+function ytvPruneApiCallTimestamps() {
+  const cutoff = Date.now() - YTV_API_BUDGET_WINDOW_MS;
+  while (ytvApiCallTimestamps.length && ytvApiCallTimestamps[0] <= cutoff) {
+    ytvApiCallTimestamps.shift();
+  }
+}
+
+/** Milliseconds until a budget slot frees up (0 if one is free now). */
+function ytvMsUntilApiBudget() {
+  ytvPruneApiCallTimestamps();
+  if (ytvApiCallTimestamps.length < YTV_MAX_API_CALLS_PER_WINDOW) return 0;
+  return Math.max(0, ytvApiCallTimestamps[0] + YTV_API_BUDGET_WINDOW_MS - Date.now());
+}
+
+function ytvIsQuotaCoolingDown() {
+  return Date.now() < ytvQuotaExhaustedUntil;
+}
+
+function ytvRecordQuotaExceeded(cooldownMs = YTV_QUOTA_COOLDOWN_MS) {
+  ytvQuotaExhaustedUntil = Date.now() + cooldownMs;
+}
+
+/**
+ * Detects a YouTube Data API quota-exceeded error response.
+ * @param {any} data - Parsed JSON response body
+ * @returns {boolean}
+ */
+function ytvIsYoutubeQuotaError(data) {
+  const apiError = data && data.error;
+  if (!apiError) return false;
+  const reasons = Array.isArray(apiError.errors) ? apiError.errors.map((e) => e.reason) : [];
+  return reasons.includes("quotaExceeded") || reasons.includes("dailyLimitExceeded") || reasons.includes("rateLimitExceeded");
+}
+
+/**
+ * Serializes the "wait for the minimum interval, then claim the slot" step
+ * across concurrent callers so no two callers can observe the same stale
+ * ytvLastApiCallAt and start together. Read + wait + write happen in a single
+ * callback chained onto the shared gate, so there is no window between them
+ * for another caller to interleave.
+ * @returns {Promise<void>}
+ */
+function ytvReserveApiCallSlot(signal) {
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException("Search superseded", "AbortError");
+  };
+  const myTurn = ytvApiCallGate.then(async () => {
+    throwIfAborted();
+    const elapsed = Date.now() - ytvLastApiCallAt;
+    const waitMs = Math.max(0, YTV_MIN_API_CALL_INTERVAL_MS - elapsed);
+    if (waitMs > 0) {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, waitMs);
+        function onAbort() {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", onAbort);
+          reject(new DOMException("Search superseded", "AbortError"));
+        }
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      });
+    }
+    throwIfAborted();
+    ytvLastApiCallAt = Date.now();
+  });
+  ytvApiCallGate = myTurn.catch(() => {});
+  return myTurn;
+}
+
+/**
+ * Cancels/removes any pending search other than the one for cacheKey. A new,
+ * different search always supersedes whatever an older one was doing. Two
+ * callers of the *same* query are never affected by this, since there is only
+ * ever one pending entry per key.
+ * @param {string} cacheKey
+ */
+function ytvCancelPendingSearchesExcept(cacheKey) {
+  for (const [key, entry] of ytvPendingSearches.entries()) {
+    if (key !== cacheKey) {
+      entry.controller.abort();
+      ytvPendingSearches.delete(key);
+    }
+  }
+}
+
+/**
+ * Resolves a YouTube search query to results, applying all of the API-usage
+ * safeguards above: cache-first, in-flight deduplication, cancellation of
+ * obsolete searches, serialized/spaced request starts, a conservative
+ * per-instance request budget, and a cooldown once the API itself reports
+ * quota exhaustion. UI-agnostic by design (no Spicetify/DOM access) so it can
+ * be unit-tested directly.
+ * @param {string} query
+ * @param {{fetchImpl?: typeof fetch}} [options]
+ * @returns {Promise<{data: any, fromCache: boolean}>}
+ */
+async function fetchYoutubeSearchResults(query, { fetchImpl = fetch } = {}) {
+  const cacheKey = cacheUtils.getSearchKey(query);
+
+  ytvCancelPendingSearchesExcept(cacheKey);
+
+  const cachedResults = cacheUtils.get(cacheKey);
+  if (cachedResults) {
+    return { data: cachedResults, fromCache: true };
+  }
+
+  const pending = ytvPendingSearches.get(cacheKey);
+  if (pending) {
+    return pending.promise;
+  }
+
+  if (ytvIsQuotaCoolingDown()) {
+    throw new YtvQuotaCoolingDownError();
+  }
+  if (!ytvHasApiBudget()) {
+    throw new YtvBudgetExhaustedError(ytvMsUntilApiBudget());
+  }
+
+  const controller = new AbortController();
+  const entry = { promise: null, controller };
+  const promise = (async () => {
+    try {
+      await ytvReserveApiCallSlot(controller.signal);
+      if (controller.signal.aborted) throw new DOMException("Search superseded", "AbortError");
+      if (!ytvHasApiBudget()) throw new YtvBudgetExhaustedError(ytvMsUntilApiBudget());
+      ytvApiCallTimestamps.push(Date.now());
+
+      const encodedApiQuery = encodeURIComponent(query);
+      const response = await fetchImpl(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedApiQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`,
+        { signal: controller.signal }
+      );
+      const data = await response.json();
+
+      if (ytvIsYoutubeQuotaError(data)) {
+        ytvRecordQuotaExceeded();
+        throw new YtvQuotaCoolingDownError();
+      }
+      if (data.error) {
+        throw new Error(data.error.message || "API Error");
+      }
+
+      if (data.items && data.items.length > 0) {
+        cacheUtils.set(cacheKey, data);
+      }
+
+      return { data, fromCache: false };
+    } finally {
+      if (ytvPendingSearches.get(cacheKey) === entry) {
+        ytvPendingSearches.delete(cacheKey);
+      }
+    }
+  })();
+
+  entry.promise = promise;
+  ytvPendingSearches.set(cacheKey, entry);
+  return promise;
+}
+
+/**
+ * Resets module-level rate-limiter state. Test-only; not called in production.
+ * Accepts overrides so tests can seed state (e.g. put the budget one call
+ * away from exhausted) without waiting out real intervals/cooldowns.
+ * @param {{apiCallCount?: number, apiCallTimestamps?: number[], quotaExhaustedUntil?: number, lastApiCallAt?: number}} [overrides]
+ */
+function __resetYtvRateLimiterStateForTests(overrides = {}) {
+  ytvApiCallTimestamps = overrides.apiCallTimestamps
+    ? [...overrides.apiCallTimestamps]
+    : Array.from({ length: overrides.apiCallCount ?? 0 }, () => Date.now());
+  ytvQuotaExhaustedUntil = overrides.quotaExhaustedUntil ?? 0;
+  ytvLastApiCallAt = overrides.lastApiCallAt ?? 0;
+  ytvApiCallGate = Promise.resolve();
+  ytvCurrentSearchToken = 0;
+  for (const entry of ytvPendingSearches.values()) {
+    entry.controller.abort();
+  }
+  ytvPendingSearches.clear();
+}
 
 /**
  * Loads settings from localStorage
@@ -778,6 +1004,7 @@ function openYouTubeVideoForTrack(trackInfo) {
     // Function to show search results using API
     showApiResults = async (query) => {
       console.debug("YT-Video: Showing API results for:", query);
+      const myToken = ++ytvCurrentSearchToken;
       const currentContentContainer = document.getElementById("ytv-content"); // Get fresh reference
 
       // Show loading spinner
@@ -788,28 +1015,12 @@ function openYouTubeVideoForTrack(trackInfo) {
       `;
 
       try {
-        // Check cache first
-        const searchCacheKey = cacheUtils.getSearchKey(query); // Renamed to avoid conflict
-        const cachedResults = cacheUtils.get(searchCacheKey);
+        const { data } = await fetchYoutubeSearchResults(query);
 
-        let data;
-        if (cachedResults) {
-          console.debug("YT-Video: Using cached results for:", query);
-          data = cachedResults;
-        } else {
-          // Fetch from API if not in cache
-          const encodedApiQuery = encodeURIComponent(query); // Renamed to avoid conflict
-          const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodedApiQuery}&type=video&maxResults=15&key=${ytvSettings.apiKey}`);
-          data = await response.json();
-
-          if (data.error) {
-            throw new Error(data.error.message || "API Error");
-          }
-
-          // Cache the results
-          if (data.items && data.items.length > 0) {
-            cacheUtils.set(searchCacheKey, data);
-          }
+        // A newer search has already taken over the results pane; drop this
+        // now-stale response instead of rendering over it.
+        if (myToken !== ytvCurrentSearchToken) {
+          return;
         }
 
         if (!data.items || data.items.length === 0) {
@@ -942,12 +1153,31 @@ function openYouTubeVideoForTrack(trackInfo) {
         });
 
       } catch (error) {
+        // A newer search aborted this one on purpose; it already owns the
+        // results pane, so there's nothing to show here.
+        if (error.name === "AbortError" || myToken !== ytvCurrentSearchToken) {
+          return;
+        }
+
         console.error("YT-Video: Error fetching search results:", error);
+
+        const isBudgetExhausted = error.name === "YtvBudgetExhaustedError";
+        const isQuotaCoolingDown = error.name === "YtvQuotaCoolingDownError";
+        const retryMinutes = Math.max(1, Math.ceil((error.retryAfterMs || 0) / 60000));
+        const errorMessage = isBudgetExhausted
+          ? `YouTube search limit reached (${YTV_MAX_API_CALLS_PER_WINDOW} new searches per hour). Try again in about ${retryMinutes} minute${retryMinutes === 1 ? "" : "s"}.`
+          : isQuotaCoolingDown
+          ? "YouTube API quota temporarily exhausted. Please try again later."
+          : (error.message || "Failed to fetch search results");
+        const helpText = (isBudgetExhausted || isQuotaCoolingDown)
+          ? "This limit protects the shared YouTube API quota from being exhausted by this extension."
+          : "Please check your API key in settings or try again later.";
+
         currentContentContainer.innerHTML = `
           <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #121212; color: white; text-align: center; padding: 20px;">
-            <p>Error: ${error.message || "Failed to fetch search results"}</p>
-            <p style="margin-top: 8px; color: #b3b3b3;">Please check your API key in settings or try again later.</p>
-            <button onclick="window.open('https://www.youtube.com/results?search_query=${encodeURIComponent(query)}', '_blank')" 
+            <p>${isBudgetExhausted || isQuotaCoolingDown ? errorMessage : `Error: ${errorMessage}`}</p>
+            <p style="margin-top: 8px; color: #b3b3b3;">${helpText}</p>
+            <button onclick="window.open('https://www.youtube.com/results?search_query=${encodeURIComponent(query)}', '_blank')"
                     style="background-color: #282828; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 16px;">
               Open Search on YouTube
             </button>
@@ -1396,11 +1626,34 @@ const ytv_main = async (condition, callback) => {
 
 console.info("YT-Video: [diag] Script loaded");
 
-// Initialize when Spicetify is ready
-ytv_main(() => {
-  const ready = Spicetify && Spicetify.Platform && Spicetify.Platform[YTV_SPICETIFY_LAST_LOADED_API] && Spicetify.Playbar?.Button && document.readyState === 'complete';
-  if (ready) {
-    console.debug("YT-Video: Spicetify is ready");
-  }
-  return ready;
-}, init); 
+// Initialize when Spicetify is ready. Guarded so loading this file under a
+// plain Node test runner (no `window`) doesn't start the polling loop below.
+if (typeof window !== "undefined") {
+  ytv_main(() => {
+    const ready = Spicetify && Spicetify.Platform && Spicetify.Platform[YTV_SPICETIFY_LAST_LOADED_API] && Spicetify.Playbar?.Button && document.readyState === 'complete';
+    if (ready) {
+      console.debug("YT-Video: Spicetify is ready");
+    }
+    return ready;
+  }, init);
+}
+
+// Test-only export hook. `module` does not exist in a browser <script> tag
+// (the primary deploy path copies this file as-is) and is harmless inside
+// webpack's module wrapper (the bundled deploy-dist path), so this has no
+// effect in production either way.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    fetchYoutubeSearchResults,
+    ytvHasApiBudget,
+    ytvIsQuotaCoolingDown,
+    ytvCancelPendingSearchesExcept,
+    ytvReserveApiCallSlot,
+    cacheUtils,
+    YTV_MAX_API_CALLS_PER_WINDOW,
+    YTV_API_BUDGET_WINDOW_MS,
+    YTV_QUOTA_COOLDOWN_MS,
+    YTV_MIN_API_CALL_INTERVAL_MS,
+    __resetYtvRateLimiterStateForTests,
+  };
+}
