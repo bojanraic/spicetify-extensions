@@ -5,7 +5,7 @@ Spicetify YT-Video is a Spicetify extension that adds a YouTube button to the pl
 ## How it works
 
 - Adds a YouTube button to Spotify's player controls.
-- Adds a "Play video" item to the track's, album's, and artist's context menu.
+- The context menu item ("Play video") is temporarily removed: Spicetify 2.45.x menu items break Spotify 1.3.x menus.
 - When clicked (or invoked via shortcut), it opens an overlay within Spotify showing YouTube search results based on the track's artist and name.
 - You can browse through search results and click any video to watch it in the embedded player.
 - Videos play directly in the overlay using the embed player for enhanced privacy.
